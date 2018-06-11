@@ -7,11 +7,11 @@
 - [P4Runtime](https://github.com/p4lang/PI#building-p4runtimeproto): the
 protobuf / gRPC Python code for P4Runtime must have been generated and installed
 in the Python path.
+- [BMv2](https://github.com/p4lang/behavioral-model/blob/master/targets/simple_switch_grpc)
 
-## Steps to run the tests
+## Before running the tests
 
-1. Compile fabric.p4 with desired preprocessor flags. All the compiler outputs
-must be placed in the same output directory. For example:
+Compile fabric.p4 with the desired backend and preprocessor flags. For example:
 
 ```
 p4c --target tofino --arch v1model fabric.p4 -DWITH_INT_TRANSIT \
@@ -19,13 +19,40 @@ p4c --target tofino --arch v1model fabric.p4 -DWITH_INT_TRANSIT \
     --p4runtime-format text --p4runtime-file fabric-DWITH_INT_TRANSIT.out/p4info.proto
 ```
 
-2. Start switchd (with `--skip-p4`) as you normally do.
+## Steps to run the tests with BMv2
 
-3. Run the PTF tests:
+1. Setup veth interfaces, using the script provided with BMv2. This script
+should be executed only once before executing tests, or after a reboot of the
+test machine.
 
 ```
-sudo ./ptf_runner.py --p4c-out fabric-DWITH_INT_TRANSIT.out/ \
-    --ptf-dir fabric.ptf/ --port-map <path to port map JSON> all ^spgw
+cd <path to bmv2 repo>/tools
+./veth_setup.sh
+```
+
+2. Run the PTF tests with BMv2 arguments:
+
+```
+sudo ./ptf_runner.py --device bmv2 
+    --p4info fabric-DWITH_INT_TRANSIT.p4info \
+    --bmv2-json fabric-DWITH_INT_TRANSIT.json \
+    --ptf-dir fabric.ptf --port-map ./port_map.veth.json \
+    all ^spgw
+```
+
+## Steps to run the tests with Tofino
+
+1. Start `switchd` (with `--skip-p4`) as you normally do.
+   
+3. Run the PTF tests with Tofino arguments:
+
+```
+sudo ./ptf_runner.py --device bmv2 
+    --p4info fabric-DWITH_INT_TRANSIT.p4info \
+    --tofino-bin tofino-DWITH_INT_TRANSIT.bin \
+    --tofino-ctx-json context-DWITH_INT_TRANSIT.json \
+    --ptf-dir fabric.ptf --port-map ./port_map.veth.json \
+    all ^spgw
 ```
 
 ## Running the right PTF tests for the right profile

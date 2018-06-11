@@ -18,27 +18,23 @@
 #
 #
 
-from collections import Counter
-from functools import wraps, partial
-import sys
+import Queue
 import threading
 import time
-import Queue
+from collections import Counter
+from functools import wraps, partial
+from unittest import SkipTest
 
-import ptf
-from ptf.base_tests import BaseTest
-from ptf import config
-import ptf.testutils as testutils
-
+import google.protobuf.text_format
 import grpc
-
+import ptf
+import ptf.testutils as testutils
 from google.rpc import status_pb2, code_pb2
 from p4 import p4runtime_pb2
-from p4.tmp import p4config_pb2
 from p4.config import p4info_pb2
-import google.protobuf.text_format
+from ptf import config
+from ptf.base_tests import BaseTest
 
-from unittest import SkipTest
 
 # See https://gist.github.com/carymrobbins/8940382
 # functools.partialmethod is introduced in Python 3.4
@@ -49,22 +45,26 @@ class partialmethod(partial):
         return partial(self.func, instance,
                        *(self.args or ()), **(self.keywords or {}))
 
+
 # Convert integer (with length) to binary byte string
 # Equivalent to Python 3.2 int.to_bytes
 # See
 # https://stackoverflow.com/questions/16022556/has-python-3-to-bytes-been-back-ported-to-python-2-7
 def stringify(n, length):
     h = '%x' % n
-    s = ('0'*(len(h) % 2) + h).zfill(length*2).decode('hex')
+    s = ('0' * (len(h) % 2) + h).zfill(length * 2).decode('hex')
     return s
+
 
 def ipv4_to_binary(addr):
     bytes_ = [int(b, 10) for b in addr.split('.')]
     return "".join(chr(b) for b in bytes_)
 
+
 def mac_to_binary(addr):
     bytes_ = [int(b, 16) for b in addr.split(':')]
     return "".join(chr(b) for b in bytes_)
+
 
 # Used to indicate that the gRPC error Status object returned by the server has
 # an incorrect format.
@@ -72,10 +72,11 @@ class P4RuntimeErrorFormatException(Exception):
     def __init__(self, message):
         super(P4RuntimeErrorFormatException, self).__init__(message)
 
+
 # Used to iterate over the p4.Error messages in a gRPC error Status object
 class P4RuntimeErrorIterator:
     def __init__(self, grpc_error):
-        assert(grpc_error.code() == grpc.StatusCode.UNKNOWN)
+        assert (grpc_error.code() == grpc.StatusCode.UNKNOWN)
         self.grpc_error = grpc_error
 
         error = None
@@ -112,6 +113,7 @@ class P4RuntimeErrorIterator:
             return v
         raise StopIteration
 
+
 # P4Runtime uses a 3-level message in case of an error during the processing of
 # a write batch. This means that if we do not wrap the grpc.RpcError inside a
 # custom exception, we can end-up with a non-helpful exception message in case
@@ -121,7 +123,7 @@ class P4RuntimeErrorIterator:
 # documentation for more details on error-reporting.
 class P4RuntimeWriteException(Exception):
     def __init__(self, grpc_error):
-        assert(grpc_error.code() == grpc.StatusCode.UNKNOWN)
+        assert (grpc_error.code() == grpc.StatusCode.UNKNOWN)
         super(P4RuntimeWriteException, self).__init__()
         self.errors = []
         try:
@@ -140,9 +142,11 @@ class P4RuntimeWriteException(Exception):
                 idx, code_name, p4_error.message)
         return message
 
+
 # This code is common to all tests. setUp() is invoked at the beginning of the
 # test and tearDown is called at the end, no matter whether the test passed /
 # failed / errored.
+# noinspection PyUnresolvedReferences
 class P4RuntimeTest(BaseTest):
     def setUp(self):
         BaseTest.setUp(self)
@@ -177,7 +181,7 @@ class P4RuntimeTest(BaseTest):
 
         # used to store write requests sent to the P4Runtime server, useful for
         # autocleanup of tests (see definition of autocleanup decorator below)
-        self._reqs = []
+        self.reqs = []
 
         self.set_up_stream()
 
@@ -186,14 +190,14 @@ class P4RuntimeTest(BaseTest):
     def import_p4info_names(self):
         self.p4info_obj_map = {}
         suffix_count = Counter()
-        for obj_type in ["tables", "action_profiles", "actions", "counters",
-                         "direct_counters"]:
-            for obj in getattr(self.p4info, obj_type):
+        for p4_obj_type in ["tables", "action_profiles", "actions", "counters",
+                            "direct_counters"]:
+            for obj in getattr(self.p4info, p4_obj_type):
                 pre = obj.preamble
                 suffix = None
                 for s in reversed(pre.name.split(".")):
                     suffix = s if suffix is None else s + "." + suffix
-                    key = (obj_type, suffix)
+                    key = (p4_obj_type, suffix)
                     self.p4info_obj_map[key] = obj
                     suffix_count[key] += 1
         for key, c in suffix_count.items():
@@ -203,6 +207,7 @@ class P4RuntimeTest(BaseTest):
     def set_up_stream(self):
         self.stream_out_q = Queue.Queue()
         self.stream_in_q = Queue.Queue()
+
         def stream_req_iterator():
             while True:
                 p = self.stream_out_q.get()
@@ -243,7 +248,9 @@ class P4RuntimeTest(BaseTest):
 
     def tear_down_stream(self):
         self.stream_out_q.put(None)
+        print "JOININIG..."
         self.stream_recv_thread.join()
+        print "JOINED!"
 
     def get_packet_in(self, timeout=2):
         msg = self.get_stream_packet("packet", timeout)
@@ -275,45 +282,44 @@ class P4RuntimeTest(BaseTest):
     def swports(self, idx):
         if idx >= len(self._swports):
             self.fail("Index {} is out-of-bound of port map".format(idx))
-            return None
         return self._swports[idx]
 
-    def get_obj(self, obj_type, name):
-        key = (obj_type, name)
+    def get_obj(self, p4_obj_type, p4_name):
+        key = (p4_obj_type, p4_name)
         return self.p4info_obj_map.get(key, None)
 
-    def get_obj_id(self, obj_type, name):
-        obj = self.get_obj(obj_type, name)
+    def get_obj_id(self, p4_obj_type, p4_name):
+        obj = self.get_obj(p4_obj_type, p4_name)
         if obj is None:
             return None
         return obj.preamble.id
 
-    def get_param_id(self, action_name, name):
+    def get_param_id(self, action_name, param_name):
         a = self.get_obj("actions", action_name)
         if a is None:
             return None
         for p in a.params:
-            if p.name == name:
+            if p.name == param_name:
                 return p.id
 
-    def get_mf_id(self, table_name, name):
+    def get_mf_id(self, table_name, mf_name):
         t = self.get_obj("tables", table_name)
         if t is None:
             return None
         for mf in t.match_fields:
-            if mf.name == name:
+            if mf.name == mf_name:
                 return mf.id
 
     # These are attempts at convenience functions aimed at making writing
     # P4Runtime PTF tests easier.
 
     class MF(object):
-        def __init__(self, name):
-            self.name = name
+        def __init__(self, mf_name):
+            self.name = mf_name
 
     class Exact(MF):
-        def __init__(self, name, v):
-            super(P4RuntimeTest.Exact, self).__init__(name)
+        def __init__(self, mf_name, v):
+            super(P4RuntimeTest.Exact, self).__init__(mf_name)
             self.v = v
 
         def add_to(self, mf_id, mk):
@@ -322,8 +328,8 @@ class P4RuntimeTest(BaseTest):
             mf.exact.value = self.v
 
     class Lpm(MF):
-        def __init__(self, name, v, pLen):
-            super(P4RuntimeTest.Lpm, self).__init__(name)
+        def __init__(self, mf_name, v, pLen):
+            super(P4RuntimeTest.Lpm, self).__init__(mf_name)
             self.v = v
             self.pLen = pLen
 
@@ -352,8 +358,8 @@ class P4RuntimeTest(BaseTest):
                 mf.lpm.value += '\x00'
 
     class Ternary(MF):
-        def __init__(self, name, v, mask):
-            super(P4RuntimeTest.Ternary, self).__init__(name)
+        def __init__(self, mf_name, v, mask):
+            super(P4RuntimeTest.Ternary, self).__init__(mf_name)
             self.v = v
             self.mask = mask
 
@@ -364,7 +370,7 @@ class P4RuntimeTest(BaseTest):
                 return
             mf = mk.add()
             mf.field_id = mf_id
-            assert(len(self.mask) == len(self.v))
+            assert (len(self.mask) == len(self.v))
             mf.ternary.mask = self.mask
             mf.ternary.value = ''
             # P4Runtime now has strict rules regarding ternary matches: in the
@@ -373,8 +379,8 @@ class P4RuntimeTest(BaseTest):
                 mf.ternary.value += chr(ord(self.v[i]) & ord(self.mask[i]))
 
     class Range(MF):
-        def __init__(self, name, low, high):
-            super(P4RuntimeTest.Range, self).__init__(name)
+        def __init__(self, mf_name, low, high):
+            super(P4RuntimeTest.Range, self).__init__(mf_name)
             self.low = low
             self.high = high
 
@@ -389,7 +395,7 @@ class P4RuntimeTest(BaseTest):
                 return
             mf = mk.add()
             mf.field_id = mf_id
-            assert(len(self.high) == len(self.low))
+            assert (len(self.high) == len(self.low))
             mf.range.low = self.low
             mf.range.high = self.high
 
@@ -423,7 +429,7 @@ class P4RuntimeTest(BaseTest):
     def write_request(self, req, store=True):
         rep = self._write(req)
         if store:
-            self._reqs.append(req)
+            self.reqs.append(req)
         return rep
 
     #
@@ -460,7 +466,7 @@ class P4RuntimeTest(BaseTest):
         return req, self.write_request(req, store=False)
 
     def push_update_add_group(self, req, ap_name, grp_id, grp_size=32,
-                              mbr_ids=[]):
+                              mbr_ids=()):
         update = req.updates.add()
         update.type = p4runtime_pb2.Update.INSERT
         ap_group = update.entity.action_profile_group
@@ -471,14 +477,14 @@ class P4RuntimeTest(BaseTest):
             member = ap_group.members.add()
             member.member_id = mbr_id
 
-    def send_request_add_group(self, ap_name, grp_id, grp_size=32, mbr_ids=[]):
+    def send_request_add_group(self, ap_name, grp_id, grp_size=32, mbr_ids=()):
         req = p4runtime_pb2.WriteRequest()
         req.device_id = self.device_id
         self.push_update_add_group(req, ap_name, grp_id, grp_size, mbr_ids)
         return req, self.write_request(req)
 
     def push_update_set_group_membership(self, req, ap_name, grp_id,
-                                         mbr_ids=[]):
+                                         mbr_ids=()):
         update = req.updates.add()
         update.type = p4runtime_pb2.Update.MODIFY
         ap_group = update.entity.action_profile_group
@@ -488,7 +494,7 @@ class P4RuntimeTest(BaseTest):
             member = ap_group.members.add()
             member.member_id = mbr_id
 
-    def send_request_set_group_membership(self, ap_name, grp_id, mbr_ids=[]):
+    def send_request_set_group_membership(self, ap_name, grp_id, mbr_ids=()):
         req = p4runtime_pb2.WriteRequest()
         req.device_id = self.device_id
         self.push_update_set_group_membership(req, ap_name, grp_id, mbr_ids)
@@ -568,7 +574,8 @@ class P4RuntimeTest(BaseTest):
         for update in updates:
             update.type = p4runtime_pb2.Update.DELETE
             new_req.updates.add().CopyFrom(update)
-        rep = self._write(new_req)
+        self._write(new_req)
+
 
 # Add p4info object and object id "getters" for each object type; these are just
 # wrappers around P4RuntimeTest.get_obj and P4RuntimeTest.get_obj_id.
@@ -585,6 +592,7 @@ for obj_type, nickname in [("tables", "table"),
     name = "_".join(["get", nickname, "id"])
     setattr(P4RuntimeTest, name, partialmethod(
         P4RuntimeTest.get_obj_id, obj_type))
+
 
 # this decorator can be used on the runTest method of P4Runtime PTF tests
 # when it is used, the undo_write_requests will be called at the end of the test
@@ -605,12 +613,14 @@ def autocleanup(f):
     @wraps(f)
     def handle(*args, **kwargs):
         test = args[0]
-        assert(isinstance(test, P4RuntimeTest))
+        assert (isinstance(test, P4RuntimeTest))
         try:
             return f(*args, **kwargs)
         finally:
-            test.undo_write_requests(test._reqs)
+            test.undo_write_requests(test.reqs)
+
     return handle
+
 
 def skip_on_hw(cls):
     cls._skip_on_hw = True
