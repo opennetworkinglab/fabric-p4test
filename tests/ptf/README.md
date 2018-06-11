@@ -33,10 +33,10 @@ cd <path to bmv2 repo>/tools
 2. Run the PTF tests with BMv2 arguments:
 
 ```
-sudo ./ptf_runner.py --device bmv2 
+sudo ./ptf_runner.py --device bmv2 \
     --p4info fabric-DWITH_INT_TRANSIT.p4info \
     --bmv2-json fabric-DWITH_INT_TRANSIT.json \
-    --ptf-dir fabric.ptf --port-map ./port_map.veth.json \
+    --ptf-dir fabric.ptf --port-map port_map.veth.json \
     all ^spgw
 ```
 
@@ -47,11 +47,11 @@ sudo ./ptf_runner.py --device bmv2
 3. Run the PTF tests with Tofino arguments:
 
 ```
-sudo ./ptf_runner.py --device bmv2 
+sudo ./ptf_runner.py --device tofino \ 
     --p4info fabric-DWITH_INT_TRANSIT.p4info \
     --tofino-bin tofino-DWITH_INT_TRANSIT.bin \
     --tofino-ctx-json context-DWITH_INT_TRANSIT.json \
-    --ptf-dir fabric.ptf --port-map ./port_map.veth.json \
+    --ptf-dir fabric.ptf --port-map port_map.veth.json \
     all ^spgw
 ```
 
