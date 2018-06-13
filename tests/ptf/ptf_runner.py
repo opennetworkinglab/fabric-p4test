@@ -17,7 +17,6 @@
 #
 
 import argparse
-import atexit
 import json
 import logging
 import os
@@ -180,11 +179,6 @@ def check_ptf():
         return False
 
 
-def cleanup(bmv2_sw):
-    if bmv2_sw is not None:
-        bmv2_sw.kill()
-
-
 # noinspection PyTypeChecker
 def main():
     parser = argparse.ArgumentParser(
@@ -262,27 +256,36 @@ def main():
                              loglevel='debug')
         bmv2_sw.start()
 
-    atexit.register(cleanup, bmv2_sw=bmv2_sw)
+    try:
+        success = update_config(p4info_path=args.p4info,
+                                bmv2_json_path=bmv2_json,
+                                tofino_bin_path=tofino_bin,
+                                tofino_cxt_json_path=tofino_ctx_bin,
+                                grpc_addr=args.grpc_addr,
+                                device_id=args.device_id)
 
-    success = update_config(p4info_path=args.p4info,
-                            bmv2_json_path=bmv2_json,
-                            tofino_bin_path=tofino_bin,
-                            tofino_cxt_json_path=tofino_ctx_bin,
-                            grpc_addr=args.grpc_addr,
-                            device_id=args.device_id)
+        if not success:
+            if bmv2_sw is not None:
+                bmv2_sw.kill()
+            sys.exit(2)
 
-    if not success:
-        sys.exit(2)
+        success = run_test(p4info_path=args.p4info,
+                           grpc_addr=args.grpc_addr,
+                           ptfdir=args.ptf_dir,
+                           port_map_path=args.port_map,
+                           platform=args.platform,
+                           extra_args=unknown_args)
 
-    success = run_test(p4info_path=args.p4info,
-                       grpc_addr=args.grpc_addr,
-                       ptfdir=args.ptf_dir,
-                       port_map_path=args.port_map,
-                       platform=args.platform,
-                       extra_args=unknown_args)
+        if bmv2_sw is not None:
+            bmv2_sw.kill()
 
-    if not success:
-        sys.exit(3)
+        if not success:
+            sys.exit(3)
+
+    except Exception:
+        if bmv2_sw is not None:
+            bmv2_sw.kill()
+        raise
 
 
 if __name__ == '__main__':
