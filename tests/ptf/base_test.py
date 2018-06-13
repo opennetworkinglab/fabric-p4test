@@ -248,9 +248,7 @@ class P4RuntimeTest(BaseTest):
 
     def tear_down_stream(self):
         self.stream_out_q.put(None)
-        print "JOININIG..."
         self.stream_recv_thread.join()
-        print "JOINED!"
 
     def get_packet_in(self, timeout=2):
         msg = self.get_stream_packet("packet", timeout)
@@ -309,6 +307,7 @@ class P4RuntimeTest(BaseTest):
         for mf in t.match_fields:
             if mf.name == mf_name:
                 return mf.id
+        raise Exception("Match field '%s' not found in table '%s'" % (mf_name, table_name))
 
     # These are attempts at convenience functions aimed at making writing
     # P4Runtime PTF tests easier.
@@ -509,21 +508,22 @@ class P4RuntimeTest(BaseTest):
     # list used for autocleanup, by passing store=False to write_request calls.
     #
 
-    def push_update_add_entry_to_action(self, req, t_name, mk, a_name, params):
+    def push_update_add_entry_to_action(self, req, t_name, mk, a_name, params, priority=0):
         update = req.updates.add()
         update.type = p4runtime_pb2.Update.INSERT
         table_entry = update.entity.table_entry
         table_entry.table_id = self.get_table_id(t_name)
+        table_entry.priority = priority
         if mk is not None:
             self.set_match_key(table_entry, t_name, mk)
         else:
             table_entry.is_default_action = True
         self.set_action_entry(table_entry, a_name, params)
 
-    def send_request_add_entry_to_action(self, t_name, mk, a_name, params):
+    def send_request_add_entry_to_action(self, t_name, mk, a_name, params, priority=0):
         req = p4runtime_pb2.WriteRequest()
         req.device_id = self.device_id
-        self.push_update_add_entry_to_action(req, t_name, mk, a_name, params)
+        self.push_update_add_entry_to_action(req, t_name, mk, a_name, params, priority)
         return req, self.write_request(req, store=(mk is not None))
 
     def push_update_add_entry_to_member(self, req, t_name, mk, mbr_id):
