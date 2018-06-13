@@ -13,17 +13,14 @@
 # limitations under the License.
 #
 
-import ptf.testutils as testutils
-from ptf.testutils import group
-from ptf.mask import Mask
 import struct
 
+import ptf.testutils as testutils
 from p4 import p4runtime_pb2
+from ptf.mask import Mask
+from ptf.testutils import group
 from scapy.contrib.mpls import MPLS
 from scapy.layers.inet import IP, UDP, Ether
-
-from base_test import P4RuntimeTest, autocleanup
-from base_test import stringify, ipv4_to_binary, mac_to_binary
 
 # In case the "correct" version of scapy (from p4lang) is not installed, we
 # provide the INT header formats in xnt.py
@@ -33,12 +30,15 @@ from base_test import stringify, ipv4_to_binary, mac_to_binary
 # INT_L45_HEAD = scapy.contrib.xnt.INT_L45_HEAD
 # INT_L45_TAIL = scapy.contrib.xnt.INT_L45_TAIL
 import xnt
+from base_test import P4RuntimeTest, autocleanup
+from base_test import stringify, ipv4_to_binary, mac_to_binary
 
 INT_META_HDR = xnt.INT_META_HDR
 INT_L45_HEAD = xnt.INT_L45_HEAD
 INT_L45_TAIL = xnt.INT_L45_TAIL
 
 # constants from fabric.p4
+DEFAULT_PRIORITY = 10
 FORWARDING_TYPE_BRIDGING = 0
 FORWARDING_TYPE_UNICAST_IPV4 = 2
 DEFAULT_MPLS_TTL = 64
@@ -105,7 +105,17 @@ class FabricTest(P4RuntimeTest):
             [self.Exact("standard_metadata.ingress_port", ingress_port_),
              self.Exact("hdr.vlan_tag.is_valid", vlan_valid_),
              self.Ternary("hdr.vlan_tag.vlan_id", vlan_id_, vlan_id_mask_)],
-            "filtering.push_internal_vlan", [("new_vlan_id", new_vlan_id_)])
+            "filtering.push_internal_vlan", [("new_vlan_id", new_vlan_id_)],
+            DEFAULT_PRIORITY)
+
+    def set_egress_vlan_pop(self, egress_port, vlan_id):
+        egress_port = stringify(egress_port, 2)
+        vlan_id = stringify(vlan_id, 2)
+        self.send_request_add_entry_to_action(
+            "egress_next.egress_vlan",
+            [self.Exact("hdr.vlan_tag.vlan_id", vlan_id),
+             self.Exact("standard_metadata.egress_port", egress_port)],
+            "egress_next.pop_vlan", [])
 
     def set_forwarding_type(self, ingress_port, eth_dstAddr, ethertype=0x800,
                             fwd_type=FORWARDING_TYPE_UNICAST_IPV4):
@@ -131,7 +141,8 @@ class FabricTest(P4RuntimeTest):
             [self.Exact("hdr.vlan_tag.vlan_id", vlan_id_),
              self.Ternary("hdr.ethernet.dst_addr",
                           eth_dstAddr_, eth_dstAddr_mask_)],
-            "forwarding.set_next_id", [("next_id", next_id_)])
+            "forwarding.set_next_id", [("next_id", next_id_)],
+            DEFAULT_PRIORITY)
 
     def add_forwarding_unicast_v4_entry(self, ipv4_dstAddr, ipv4_pLen,
                                         next_id):
@@ -230,15 +241,24 @@ class FabricL2UnicastTest(FabricTest):
         self.add_bridging_entry(vlan_id, HOST2_MAC, mac_addr_mask, 20)
         self.add_next_hop(10, self.port1)
         self.add_next_hop(20, self.port2)
+        self.set_egress_vlan_pop(self.port1, vlan_id)
+        self.set_egress_vlan_pop(self.port2, vlan_id)
 
         pkt_1to2 = testutils.simple_tcp_packet(
-            eth_src=HOST1_MAC, eth_dst=HOST2_MAC)
+            eth_src=HOST1_MAC, eth_dst=HOST2_MAC, ip_ttl=64)
+        exp_pkt_1to2 = testutils.simple_tcp_packet(
+            eth_src=SWITCH_MAC, eth_dst=HOST2_MAC, ip_ttl=63)
+
+        testutils.send_packet(self, self.port1, pkt_1to2)
+        testutils.verify_packets(self, exp_pkt_1to2, [self.port2])
+
         pkt_2to1 = testutils.simple_tcp_packet(
-            eth_src=HOST2_MAC, eth_dst=HOST1_MAC)
-        testutils.send_packet(self, self.port1, str(pkt_1to2))
-        testutils.verify_packets(self, pkt_1to2, [self.port2])
+            eth_src=HOST2_MAC, eth_dst=HOST1_MAC, ip_ttl=64)
+        exp_pkt_2to1 = testutils.simple_tcp_packet(
+            eth_src=HOST2_MAC, eth_dst=HOST1_MAC, ip_ttl=63)
+
         testutils.send_packet(self, self.port2, str(pkt_2to1))
-        testutils.verify_packets(self, pkt_2to1, [self.port1])
+        testutils.verify_packets(self, exp_pkt_2to1, [self.port1])
 
 
 class FabricIPv4UnicastTest(FabricTest):
@@ -255,6 +275,8 @@ class FabricIPv4UnicastTest(FabricTest):
         self.add_forwarding_unicast_v4_entry(HOST2_IPV4, 24, 200)
         self.add_next_hop_L3(100, self.port1, SWITCH_MAC, HOST1_MAC)
         self.add_next_hop_L3(200, self.port2, SWITCH_MAC, HOST2_MAC)
+        self.set_egress_vlan_pop(self.port1, vlan_id)
+        self.set_egress_vlan_pop(self.port2, vlan_id)
 
         pkt_1to2 = testutils.simple_tcp_packet(
             eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
@@ -291,6 +313,8 @@ class FabricIPv4UnicastGroupTest(FabricTest):
             3: (self.port3, SWITCH_MAC, HOST3_MAC),
         }
         self.add_next_hop_L3_group(300, grp_id, mbrs)
+        self.set_egress_vlan_pop(self.port2, vlan_id)
+        self.set_egress_vlan_pop(self.port3, vlan_id)
 
         pkt_from1 = testutils.simple_tcp_packet(
             eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
@@ -318,6 +342,7 @@ class FabricIPv4MPLSTest(FabricTest):
         mpls_label = 0xaba
         self.add_next_hop_mpls_v4(
             400, self.port2, SWITCH_MAC, HOST2_MAC, mpls_label)
+        self.set_egress_vlan_pop(self.port2, vlan_id)
 
         pkt_1to2 = testutils.simple_tcp_packet(
             eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
@@ -347,6 +372,7 @@ class FabricIPv4MPLSGroupTest(FabricTest):
         mpls_label = 0xaba
         mbrs = {2: (self.port2, SWITCH_MAC, HOST2_MAC, mpls_label)}
         self.add_next_hop_mpls_v4_group(500, grp_id, mbrs)
+        self.set_egress_vlan_pop(self.port2, vlan_id)
 
         pkt_1to2 = testutils.simple_tcp_packet(
             eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
