@@ -284,21 +284,21 @@ class P4RuntimeTest(BaseTest):
 
     def get_obj(self, p4_obj_type, p4_name):
         key = (p4_obj_type, p4_name)
-        return self.p4info_obj_map.get(key, None)
+        obj = self.p4info_obj_map.get(key, None)
+        if obj is None:
+            raise Exception("Unable to find %s '%s' in p4info" % (p4_obj_type, p4_name))
+        return obj
 
     def get_obj_id(self, p4_obj_type, p4_name):
         obj = self.get_obj(p4_obj_type, p4_name)
-        if obj is None:
-            return None
         return obj.preamble.id
 
     def get_param_id(self, action_name, param_name):
         a = self.get_obj("actions", action_name)
-        if a is None:
-            return None
         for p in a.params:
             if p.name == param_name:
                 return p.id
+            raise Exception("Param '%s' not found in action '%s'" % (param_name, action_name))
 
     def get_mf_id(self, table_name, mf_name):
         t = self.get_obj("tables", table_name)
