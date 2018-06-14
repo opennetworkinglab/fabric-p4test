@@ -214,6 +214,9 @@ def main():
     parser.add_argument('--platform',
                         help='Target platform on which tests are run (if target is tofino)',
                         type=str, required=False)
+    parser.add_argument('--skip-config',
+                        help='Assume a device with pipeline already configured',
+                        action="store_true", default=False)
     args, unknown_args = parser.parse_known_args()
 
     if not check_ptf():
@@ -222,7 +225,7 @@ def main():
 
     device = args.device
     bmv2_json = None
-    tofino_ctx_bin = None
+    tofino_ctx_json = None
     tofino_bin = None
     if not os.path.exists(args.p4info):
         error("P4Info file {} not found".format(args.p4info))
@@ -231,11 +234,11 @@ def main():
         if not os.path.exists(args.tofino_bin):
             error("Tofino binary config file {} not found".format(args.tofino_bin))
             sys.exit(1)
-        if not os.path.exists(args.tofino_ctx_bin):
-            error("Tofino context json file {} not found".format(args.tofino_ctx_bin))
+        if not os.path.exists(args.tofino_ctx_json):
+            error("Tofino context json file {} not found".format(args.tofino_ctx_json))
             sys.exit(1)
         tofino_bin = args.tofino_bin
-        tofino_ctx_bin = args.tofino_ctx_bin
+        tofino_ctx_json = args.tofino_ctx_json
     elif device == 'bmv2':
         if not os.path.exists(args.bmv2_json):
             error("BMv2 json file {} not found".format(args.bmv2_json))
@@ -257,17 +260,18 @@ def main():
         bmv2_sw.start()
 
     try:
-        success = update_config(p4info_path=args.p4info,
-                                bmv2_json_path=bmv2_json,
-                                tofino_bin_path=tofino_bin,
-                                tofino_cxt_json_path=tofino_ctx_bin,
-                                grpc_addr=args.grpc_addr,
-                                device_id=args.device_id)
 
-        if not success:
-            if bmv2_sw is not None:
-                bmv2_sw.kill()
-            sys.exit(2)
+        if not args.skip_config:
+            success = update_config(p4info_path=args.p4info,
+                                    bmv2_json_path=bmv2_json,
+                                    tofino_bin_path=tofino_bin,
+                                    tofino_cxt_json_path=tofino_ctx_json,
+                                    grpc_addr=args.grpc_addr,
+                                    device_id=args.device_id)
+            if not success:
+                if bmv2_sw is not None:
+                    bmv2_sw.kill()
+                sys.exit(2)
 
         success = run_test(p4info_path=args.p4info,
                            grpc_addr=args.grpc_addr,
