@@ -247,9 +247,9 @@ class FabricL2UnicastTest(FabricTest):
         pkt_1to2 = testutils.simple_tcp_packet(
             eth_src=HOST1_MAC, eth_dst=HOST2_MAC, ip_ttl=64)
         exp_pkt_1to2 = testutils.simple_tcp_packet(
-            eth_src=SWITCH_MAC, eth_dst=HOST2_MAC, ip_ttl=63)
+            eth_src=HOST1_MAC, eth_dst=HOST2_MAC, ip_ttl=63)
 
-        testutils.send_packet(self, self.port1, pkt_1to2)
+        testutils.send_packet(self, self.port1, str(pkt_1to2))
         testutils.verify_packets(self, exp_pkt_1to2, [self.port2])
 
         pkt_2to1 = testutils.simple_tcp_packet(
