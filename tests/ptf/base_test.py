@@ -30,8 +30,8 @@ import grpc
 import ptf
 import ptf.testutils as testutils
 from google.rpc import status_pb2, code_pb2
-from p4 import p4runtime_pb2
-from p4.config import p4info_pb2
+from p4.v1 import p4runtime_pb2
+from p4.config.v1 import p4info_pb2
 from ptf import config
 from ptf.base_tests import BaseTest
 

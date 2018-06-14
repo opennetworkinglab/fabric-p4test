@@ -16,7 +16,7 @@
 import struct
 
 import ptf.testutils as testutils
-from p4 import p4runtime_pb2
+from p4.v1 import p4runtime_pb2
 from ptf.mask import Mask
 from ptf.testutils import group
 from scapy.contrib.mpls import MPLS

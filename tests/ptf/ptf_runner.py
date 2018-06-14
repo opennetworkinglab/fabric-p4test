@@ -28,7 +28,7 @@ from collections import OrderedDict
 
 import google.protobuf.text_format
 import grpc
-from p4 import p4runtime_pb2
+from p4.v1 import p4runtime_pb2
 from p4.tmp import p4config_pb2
 
 from bmv2 import Bmv2Switch
