@@ -298,7 +298,7 @@ class P4RuntimeTest(BaseTest):
         for p in a.params:
             if p.name == param_name:
                 return p.id
-            raise Exception("Param '%s' not found in action '%s'" % (param_name, action_name))
+        raise Exception("Param '%s' not found in action '%s'" % (param_name, action_name))
 
     def get_mf_id(self, table_name, mf_name):
         t = self.get_obj("tables", table_name)
