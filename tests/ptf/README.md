@@ -1,4 +1,4 @@
-# P4Runtime PTF tests for fabric
+# P4Runtime PTF tests for ONOS fabric.p4
 
 ## Dependencies (on the test machine)
 
@@ -8,49 +8,108 @@
 protobuf / gRPC Python code for P4Runtime must have been generated and installed
 in the Python path.
 - [BMv2](https://github.com/p4lang/behavioral-model/blob/master/targets/simple_switch_grpc)
+- [ONOS](https://github.com/opennetworkinglab/onos): for fabric.p4 code and
+pre-compiled artifacts (no need to build ONOS, simply clone the repo)
+- Set `ONOS_ROOT` env variable to the location where you cloned the ONOS repo
 
 ## Before running the tests
 
-Compile fabric.p4 with the desired backend and preprocessor flags. For example:
+### Fabric profiles
+
+fabric.p4 is available in different profiles. Each profile provides different
+forwarding capabilities and is determined by the preprocessor flags used to
+compile fabric.p4.
+
+The available profiles are:
+
+| Profile name | p4c preprocessor flags | Description |
+| -------------| -----------------------|-------------|
+| `fabric` | *None* | Basic fabric profile |
+| `fabric-spgw`| `-DWITH_SPGW` | With SPGW user plane functionality |
+
+### Compiling fabric.p4 for BMv2
+
+If running tests on BMv2, you can use the pre-compiled artifacts
+(BMv2 JSON and P4Info) distributed with ONOS. These files are located under:
 
 ```
-p4c --target tofino --arch v1model fabric.p4 -DWITH_INT_TRANSIT \
-    -o fabric-DWITH_INT_TRANSIT.out \
-    --p4runtime-format text --p4runtime-file fabric-DWITH_INT_TRANSIT.out/p4info.proto
+$ONOS_ROOT/pipelines/fabric/src/main/resources/p4c-out
+```
+
+If you need to make changes to fabric.p4, you can recompile the
+P4 program using the following commands:
+
+```
+cd $ONOS_ROOT/pipelines/fabric/src/main/resources
+make
+```
+
+The `make` command will build all profiles. To build only a specific
+profile:
+
+```
+make <profile-name>
+```
+
+### Compile for other targets
+
+Compile fabric.p4 with the desired backend and preprocessor flags. For example,
+to compile for for Tofino:
+
+```
+cd $ONOS_ROOT/pipelines/fabric/src/main/resources/
+p4c --target tofino --arch v1model -DWITH_SPGW -o fabric-spgw.out \
+    --p4runtime-format text --p4runtime-file fabric-spgw.out/p4info.proto \
+    fabric.p4 
 ```
 
 ## Steps to run the tests with BMv2
 
 1. Setup veth interfaces, using the script provided with BMv2. This script
-should be executed only once before executing tests, or after a reboot of the
-test machine.
+should be executed only once before executing any PTF test, or after a reboot
+of the test machine.
 
 ```
 cd <path to bmv2 repo>/tools
-./veth_setup.sh
+sudo ./veth_setup.sh
 ```
 
-2. Run the PTF tests with BMv2 arguments:
+2. Run the PTF tests using a convenient `make` command:
+
+```
+cd fabric-p4test/tests/ptf
+make
+```
+
+The `make` command will execute tests for all fabric profiles. To run tests for
+only a specific profile:
+
+```
+make <profile-name>
+```
+
+Alternatively, you can run the `ptf-runner.py` script with BMv2 arguments.
+For example, to run tests for the `fabric` profile:
 
 ```
 sudo ./ptf_runner.py --device bmv2 \
-    --p4info fabric-DWITH_INT_TRANSIT.p4info \
-    --bmv2-json fabric-DWITH_INT_TRANSIT.json \
+    --p4info ${ONOS_ROOT}/pipelines/fabric/src/main/resources/p4c-out/fabric/bmv2/default/p4info.txt \
+    --bmv2-json ${ONOS_ROOT}/pipelines/fabric/src/main/resources/p4c-out/fabric/bmv2/default/bmv2.json \
     --ptf-dir fabric.ptf --port-map port_map.veth.json \
     all ^spgw
 ```
 
 ## Steps to run the tests with Tofino
 
-1. Start `switchd` (with `--skip-p4`) as you normally do.
+1. Start `bf_switchd` (with `--skip-p4`) as you normally do.
    
 3. Run the PTF tests with Tofino arguments:
 
 ```
 sudo ./ptf_runner.py --device tofino \ 
-    --p4info fabric-DWITH_INT_TRANSIT.p4info \
-    --tofino-bin tofino-DWITH_INT_TRANSIT.bin \
-    --tofino-ctx-json context-DWITH_INT_TRANSIT.json \
+    --p4info p4info.txt \
+    --tofino-bin tofino.bin \
+    --tofino-ctx-json context.json \
     --ptf-dir fabric.ptf --port-map port_map.veth.json \
     all ^spgw
 ```
@@ -66,17 +125,18 @@ you are using. You simply need to provide the appropriate PTF "test specs" at
 the end of the `ptf_runner.py` command-line invocation based on your
 preprocessor flags as per this table:
 
-| Preprocessor flags passed to p4c | PTF test specs |
-| -------------------------------- | -------------- |
-| None | all ^spgw ^int_transit |
-| -DWITH_SPGW | all ^int_transit |
-| -DWITH_INT_TRANSIT | all ^spgw |
-| -DWITH_SPGW -DWITH_INT_TRANSIT | all |
+| Profile | PTF test specs |
+| ------- | -------------- |
+| `fabric` | `all ^spgw` |
+| `fabric-spgw` | `all` |
+
+For an example of how PTF test specs are used, you can refer to [this
+Makefile](./Makefile) used for BMv2 tests.
 
 ## Port map JSON file
 
 This file is required to let PTF know which test interface corresponds to which
-P4 dataplane port number. Consider the follwing test topology:
+P4 dataplane port number. Consider the following test topology:
 
 ```
              ASIC under test

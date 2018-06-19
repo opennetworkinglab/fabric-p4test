@@ -172,7 +172,7 @@ class P4RuntimeTest(BaseTest):
         self.stub = p4runtime_pb2.P4RuntimeStub(self.channel)
 
         proto_txt_path = testutils.test_param_get("p4info")
-        print "Importing p4info proto from", proto_txt_path
+        # print "Importing p4info proto from", proto_txt_path
         self.p4info = p4info_pb2.P4Info()
         with open(proto_txt_path, "rb") as fin:
             google.protobuf.text_format.Merge(fin.read(), self.p4info)
