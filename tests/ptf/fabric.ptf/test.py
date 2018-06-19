@@ -1,4 +1,5 @@
 # Copyright 2013-present Barefoot Networks, Inc.
+# Copyright 2018-present Open Networking Foundation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,6 +15,7 @@
 #
 
 import struct
+import unittest
 
 import ptf.testutils as testutils
 from p4.v1 import p4runtime_pb2
@@ -392,22 +394,21 @@ class FabricIPv4MPLSGroupTest(FabricTest):
 
 class PacketOutTest(FabricTest):
     def runTest(self):
-        port3 = self.swports(3)
-        port3_hex = stringify(port3, 2)
-        payload = 'a' * 20
-        packet_out = p4runtime_pb2.PacketOut()
-        packet_out.payload = payload
-        egress_physical_port = packet_out.metadata.add()
-        egress_physical_port.metadata_id = 1
-        egress_physical_port.value = port3_hex
+        for port in [self.port1, self.port2]:
+            port_hex = stringify(port, 2)
+            payload = 'a' * 20
+            packet_out = p4runtime_pb2.PacketOut()
+            packet_out.payload = payload
+            egress_physical_port = packet_out.metadata.add()
+            egress_physical_port.metadata_id = 1
+            egress_physical_port.value = port_hex
 
-        self.send_packet_out(packet_out)
+            self.send_packet_out(packet_out)
 
-        testutils.verify_packet(self, payload, port3)
-        testutils.verify_no_other_packets(self)
+            testutils.verify_packet(self, payload, port)
+            testutils.verify_no_other_packets(self)
 
 
-@group("spgw")
 class SpgwTest(FabricTest):
     def setUp(self):
         super(SpgwTest, self).setUp()
@@ -459,6 +460,7 @@ class SpgwSimpleTest(SpgwTest):
         self.write_request(req)
 
 
+@group("spgw")
 class SpgwDownlinkTest(SpgwSimpleTest):
     @autocleanup
     def runTest(self):
@@ -477,6 +479,7 @@ class SpgwDownlinkTest(SpgwSimpleTest):
         testutils.verify_packet(self, exp_pkt, self.port1)
 
 
+@group("spgw")
 class SpgwUplinkTest(SpgwSimpleTest):
     @autocleanup
     def runTest(self):
@@ -536,6 +539,7 @@ class SpgwMPLSTest(SpgwTest):
         self.write_request(req)
 
 
+@group("spgw")
 class SpgwDownlinkMPLSTest(SpgwMPLSTest):
     @autocleanup
     def runTest(self):
@@ -554,8 +558,8 @@ class SpgwDownlinkMPLSTest(SpgwMPLSTest):
         testutils.send_packet(self, self.port2, str(pkt))
         testutils.verify_packet(self, exp_pkt, self.port1)
 
-
-@group("int_transit")
+@group("spgw")
+@unittest.skip("INT transit capability not yet supported")
 class SpgwDownlinkMPLS_INT_Test(SpgwMPLSTest):
     @autocleanup
     def runTest(self):
