@@ -18,6 +18,7 @@ import struct
 import unittest
 
 import ptf.testutils as testutils
+import scapy.packet
 from p4.v1 import p4runtime_pb2
 from ptf.mask import Mask
 from ptf.testutils import group
@@ -154,6 +155,15 @@ class FabricTest(P4RuntimeTest):
             "forwarding.unicast_v4",
             [self.Lpm("hdr.ipv4.dst_addr", ipv4_dstAddr_, ipv4_pLen)],
             "forwarding.set_next_id", [("next_id", next_id_)])
+
+    def add_forwarding_acl_cpu_entry(self, eth_type=None):
+        eth_type_ = stringify(eth_type, 2)
+        eth_type_mask = stringify(0xFFFF, 2)
+        self.send_request_add_entry_to_action(
+            "forwarding.acl",
+            [self.Ternary("fabric_metadata.original_ether_type", eth_type_, eth_type_mask)],
+            "forwarding.duplicate_to_controller", [],
+            DEFAULT_PRIORITY)
 
     def add_next_hop(self, next_id, egress_port):
         next_id_ = stringify(next_id, 4)
@@ -409,6 +419,18 @@ class PacketOutTest(FabricTest):
             testutils.verify_no_other_packets(self)
 
 
+class PacketInTest(FabricTest):
+    def runTest(self):
+        vlan_id = 10
+        self.add_forwarding_acl_cpu_entry(eth_type=0x806)
+        arp_pkt = testutils.simple_arp_packet()
+        for port in [self.port1, self.port2]:
+            self.set_internal_vlan(port, False, 0, 0, vlan_id)
+            testutils.send_packet(self, port, str(arp_pkt))
+            self.verify_packet_in(arp_pkt, port)
+        testutils.verify_no_other_packets(self)
+
+
 class SpgwTest(FabricTest):
     def setUp(self):
         super(SpgwTest, self).setUp()
@@ -557,6 +579,7 @@ class SpgwDownlinkMPLSTest(SpgwMPLSTest):
                   inner_udp
         testutils.send_packet(self, self.port2, str(pkt))
         testutils.verify_packet(self, exp_pkt, self.port1)
+
 
 @group("spgw")
 @unittest.skip("INT transit capability not yet supported")
