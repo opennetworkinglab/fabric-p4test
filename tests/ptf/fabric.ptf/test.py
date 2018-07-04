@@ -18,7 +18,6 @@ import struct
 import unittest
 
 import ptf.testutils as testutils
-import scapy.packet
 from p4.v1 import p4runtime_pb2
 from ptf.mask import Mask
 from ptf.testutils import group
@@ -403,32 +402,77 @@ class FabricIPv4MPLSGroupTest(FabricTest):
 
 
 class PacketOutTest(FabricTest):
-    def runTest(self):
+    def runPacketOutTest(self, pkt):
         for port in [self.port1, self.port2]:
             port_hex = stringify(port, 2)
-            payload = 'a' * 20
             packet_out = p4runtime_pb2.PacketOut()
-            packet_out.payload = payload
+            packet_out.payload = str(pkt)
             egress_physical_port = packet_out.metadata.add()
             egress_physical_port.metadata_id = 1
             egress_physical_port.value = port_hex
 
             self.send_packet_out(packet_out)
+            testutils.verify_packet(self, pkt, port)
+        testutils.verify_no_other_packets(self)
 
-            testutils.verify_packet(self, payload, port)
-            testutils.verify_no_other_packets(self)
+
+@group("packetio")
+class FabricArpPacketOutTest(PacketOutTest):
+    @autocleanup
+    def runTest(self):
+        pkt = testutils.simple_arp_packet()
+        self.runPacketOutTest(pkt)
+
+
+@group("packetio")
+class FabricShortIpPacketOutTest(PacketOutTest):
+    @autocleanup
+    def runTest(self):
+        pkt = testutils.simple_ip_packet(pktlen=60)
+        self.runPacketOutTest(pkt)
+
+
+@group("packetio")
+class FabricLongIpPacketOutTest(PacketOutTest):
+    @autocleanup
+    def runTest(self):
+        pkt = testutils.simple_ip_packet(pktlen=120)
+        self.runPacketOutTest(pkt)
 
 
 class PacketInTest(FabricTest):
-    def runTest(self):
+    def runPacketInTest(self, pkt):
         vlan_id = 10
-        self.add_forwarding_acl_cpu_entry(eth_type=0x806)
-        arp_pkt = testutils.simple_arp_packet()
+        self.add_forwarding_acl_cpu_entry(eth_type=pkt.type)
         for port in [self.port1, self.port2]:
             self.set_internal_vlan(port, False, 0, 0, vlan_id)
-            testutils.send_packet(self, port, str(arp_pkt))
-            self.verify_packet_in(arp_pkt, port)
-        testutils.verify_no_other_packets(self)
+            testutils.send_packet(self, port, str(pkt))
+            self.verify_packet_in(pkt, port)
+            testutils.verify_no_other_packets(self)
+
+
+@group("packetio")
+class FabricArpPacketInTest(PacketInTest):
+    @autocleanup
+    def runTest(self):
+        pkt = testutils.simple_arp_packet()
+        self.runPacketInTest(pkt)
+
+
+@group("packetio")
+class FabricLongIpPacketInTest(PacketInTest):
+    @autocleanup
+    def runTest(self):
+        pkt = testutils.simple_ip_packet(pktlen=120)
+        self.runPacketInTest(pkt)
+
+
+@group("packetio")
+class FabricShortIpPacketInTest(PacketInTest):
+    @autocleanup
+    def runTest(self):
+        pkt = testutils.simple_ip_packet(pktlen=60)
+        self.runPacketInTest(pkt)
 
 
 class SpgwTest(FabricTest):
