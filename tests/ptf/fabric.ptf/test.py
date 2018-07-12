@@ -155,6 +155,15 @@ class FabricTest(P4RuntimeTest):
             [self.Lpm("hdr.ipv4.dst_addr", ipv4_dstAddr_, ipv4_pLen)],
             "forwarding.set_next_id_unicast_v4", [("next_id", next_id_)])
 
+    def add_forwarding_acl_cpu_entry(self, eth_type=None):
+        eth_type_ = stringify(eth_type, 2)
+        eth_type_mask = stringify(0xFFFF, 2)
+        self.send_request_add_entry_to_action(
+            "forwarding.acl",
+            [self.Ternary("fabric_metadata.original_ether_type", eth_type_, eth_type_mask)],
+            "forwarding.duplicate_to_controller", [],
+            DEFAULT_PRIORITY)
+
     def add_next_hop(self, next_id, egress_port):
         next_id_ = stringify(next_id, 4)
         egress_port_ = stringify(egress_port, 2)
@@ -393,20 +402,77 @@ class FabricIPv4MPLSGroupTest(FabricTest):
 
 
 class PacketOutTest(FabricTest):
-    def runTest(self):
+    def runPacketOutTest(self, pkt):
         for port in [self.port1, self.port2]:
             port_hex = stringify(port, 2)
-            payload = 'a' * 20
             packet_out = p4runtime_pb2.PacketOut()
-            packet_out.payload = payload
+            packet_out.payload = str(pkt)
             egress_physical_port = packet_out.metadata.add()
             egress_physical_port.metadata_id = 1
             egress_physical_port.value = port_hex
 
             self.send_packet_out(packet_out)
+            testutils.verify_packet(self, pkt, port)
+        testutils.verify_no_other_packets(self)
 
-            testutils.verify_packet(self, payload, port)
+
+@group("packetio")
+class FabricArpPacketOutTest(PacketOutTest):
+    @autocleanup
+    def runTest(self):
+        pkt = testutils.simple_arp_packet()
+        self.runPacketOutTest(pkt)
+
+
+@group("packetio")
+class FabricShortIpPacketOutTest(PacketOutTest):
+    @autocleanup
+    def runTest(self):
+        pkt = testutils.simple_ip_packet(pktlen=60)
+        self.runPacketOutTest(pkt)
+
+
+@group("packetio")
+class FabricLongIpPacketOutTest(PacketOutTest):
+    @autocleanup
+    def runTest(self):
+        pkt = testutils.simple_ip_packet(pktlen=120)
+        self.runPacketOutTest(pkt)
+
+
+class PacketInTest(FabricTest):
+    def runPacketInTest(self, pkt):
+        vlan_id = 10
+        self.add_forwarding_acl_cpu_entry(eth_type=pkt.type)
+        for port in [self.port1, self.port2]:
+            self.set_internal_vlan(port, False, 0, 0, vlan_id)
+            testutils.send_packet(self, port, str(pkt))
+            self.verify_packet_in(pkt, port)
             testutils.verify_no_other_packets(self)
+
+
+@group("packetio")
+class FabricArpPacketInTest(PacketInTest):
+    @autocleanup
+    def runTest(self):
+        pkt = testutils.simple_arp_packet()
+        self.runPacketInTest(pkt)
+
+
+@group("packetio")
+class FabricLongIpPacketInTest(PacketInTest):
+    @autocleanup
+    def runTest(self):
+        pkt = testutils.simple_ip_packet(pktlen=120)
+        self.runPacketInTest(pkt)
+
+
+@group("packetio")
+class FabricShortIpPacketInTest(PacketInTest):
+    @autocleanup
+    def runTest(self):
+        pkt = testutils.simple_ip_packet(pktlen=60)
+        self.runPacketInTest(pkt)
 
 
 class SpgwTest(FabricTest):
@@ -557,6 +623,7 @@ class SpgwDownlinkMPLSTest(SpgwMPLSTest):
                   inner_udp
         testutils.send_packet(self, self.port2, str(pkt))
         testutils.verify_packet(self, exp_pkt, self.port1)
+
 
 @group("spgw")
 @unittest.skip("INT transit capability not yet supported")
