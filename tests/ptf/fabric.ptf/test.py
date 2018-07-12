@@ -143,7 +143,7 @@ class FabricTest(P4RuntimeTest):
             [self.Exact("hdr.vlan_tag.vlan_id", vlan_id_),
              self.Ternary("hdr.ethernet.dst_addr",
                           eth_dstAddr_, eth_dstAddr_mask_)],
-            "forwarding.set_next_id", [("next_id", next_id_)],
+            "forwarding.set_next_id_bridging", [("next_id", next_id_)],
             DEFAULT_PRIORITY)
 
     def add_forwarding_unicast_v4_entry(self, ipv4_dstAddr, ipv4_pLen,
@@ -153,7 +153,7 @@ class FabricTest(P4RuntimeTest):
         self.send_request_add_entry_to_action(
             "forwarding.unicast_v4",
             [self.Lpm("hdr.ipv4.dst_addr", ipv4_dstAddr_, ipv4_pLen)],
-            "forwarding.set_next_id", [("next_id", next_id_)])
+            "forwarding.set_next_id_unicast_v4", [("next_id", next_id_)])
 
     def add_next_hop(self, next_id, egress_port):
         next_id_ = stringify(next_id, 4)
@@ -161,7 +161,7 @@ class FabricTest(P4RuntimeTest):
         self.send_request_add_entry_to_action(
             "next.simple",
             [self.Exact("fabric_metadata.next_id", next_id_)],
-            "next.output", [("port_num", egress_port_)])
+            "next.output_simple", [("port_num", egress_port_)])
 
     def add_next_hop_L3(self, next_id, egress_port, smac, dmac):
         next_id_ = stringify(next_id, 4)
@@ -171,7 +171,7 @@ class FabricTest(P4RuntimeTest):
         self.send_request_add_entry_to_action(
             "next.simple",
             [self.Exact("fabric_metadata.next_id", next_id_)],
-            "next.l3_routing",
+            "next.l3_routing_simple",
             [("port_num", egress_port_), ("smac", smac_), ("dmac", dmac_)])
 
     # next_hops is a dictionary mapping mbr_id to (egress_port, smac, dmac)
@@ -186,7 +186,7 @@ class FabricTest(P4RuntimeTest):
                 smac_ = mac_to_binary(smac)
                 dmac_ = mac_to_binary(dmac)
                 self.send_request_add_member(
-                    "next.ecmp_selector", mbr_id, "next.l3_routing",
+                    "next.ecmp_selector", mbr_id, "next.l3_routing_hashed",
                     [("port_num", egress_port_), ("smac", smac_), ("dmac", dmac_)])
         self.send_request_add_group("next.ecmp_selector", grp_id,
                                     grp_size=32, mbr_ids=next_hops.keys())
@@ -204,7 +204,7 @@ class FabricTest(P4RuntimeTest):
         self.send_request_add_entry_to_action(
             "next.simple",
             [self.Exact("fabric_metadata.next_id", next_id_)],
-            "next.mpls_routing_v4",
+            "next.mpls_routing_v4_simple",
             [("port_num", egress_port_), ("smac", smac_), ("dmac", dmac_),
              ("label", label_)])
 
@@ -220,7 +220,7 @@ class FabricTest(P4RuntimeTest):
                 dmac_ = mac_to_binary(dmac)
                 label_ = stringify(label, 3)
                 self.send_request_add_member(
-                    "next.ecmp_selector", mbr_id, "next.mpls_routing_v4",
+                    "next.ecmp_selector", mbr_id, "next.mpls_routing_v4_hashed",
                     [("port_num", egress_port_), ("smac", smac_), ("dmac", dmac_),
                      ("label", label_)])
         self.send_request_add_group("next.ecmp_selector", grp_id,
