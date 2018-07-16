@@ -84,8 +84,6 @@ def format_pkt_match(received_pkt, expected_pkt):
             scapy.packet.ls(expected_pkt)
             print '--'
         scapy.utils.hexdump(expected_pkt)
-        print "=============================="
-
         print "========== RECEIVED =========="
         if isinstance(received_pkt, scapy.packet.Packet):
             scapy.packet.ls(received_pkt)

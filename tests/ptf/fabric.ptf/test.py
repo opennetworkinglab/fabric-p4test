@@ -161,7 +161,7 @@ class FabricTest(P4RuntimeTest):
         self.send_request_add_entry_to_action(
             "forwarding.acl",
             [self.Ternary("fabric_metadata.original_ether_type", eth_type_, eth_type_mask)],
-            "forwarding.duplicate_to_controller", [],
+            "forwarding.send_to_controller", [],
             DEFAULT_PRIORITY)
 
     def add_next_hop(self, next_id, egress_port):
@@ -420,7 +420,7 @@ class PacketOutTest(FabricTest):
 class FabricArpPacketOutTest(PacketOutTest):
     @autocleanup
     def runTest(self):
-        pkt = testutils.simple_arp_packet()
+        pkt = testutils.simple_arp_packet(pktlen=80)
         self.runPacketOutTest(pkt)
 
 
@@ -428,7 +428,7 @@ class FabricArpPacketOutTest(PacketOutTest):
 class FabricShortIpPacketOutTest(PacketOutTest):
     @autocleanup
     def runTest(self):
-        pkt = testutils.simple_ip_packet(pktlen=60)
+        pkt = testutils.simple_ip_packet(pktlen=80)
         self.runPacketOutTest(pkt)
 
 
@@ -436,7 +436,7 @@ class FabricShortIpPacketOutTest(PacketOutTest):
 class FabricLongIpPacketOutTest(PacketOutTest):
     @autocleanup
     def runTest(self):
-        pkt = testutils.simple_ip_packet(pktlen=120)
+        pkt = testutils.simple_ip_packet(pktlen=160)
         self.runPacketOutTest(pkt)
 
 
@@ -455,7 +455,7 @@ class PacketInTest(FabricTest):
 class FabricArpPacketInTest(PacketInTest):
     @autocleanup
     def runTest(self):
-        pkt = testutils.simple_arp_packet()
+        pkt = testutils.simple_arp_packet(pktlen=80)
         self.runPacketInTest(pkt)
 
 
@@ -463,7 +463,7 @@ class FabricArpPacketInTest(PacketInTest):
 class FabricLongIpPacketInTest(PacketInTest):
     @autocleanup
     def runTest(self):
-        pkt = testutils.simple_ip_packet(pktlen=120)
+        pkt = testutils.simple_ip_packet(pktlen=160)
         self.runPacketInTest(pkt)
 
 
@@ -471,7 +471,7 @@ class FabricLongIpPacketInTest(PacketInTest):
 class FabricShortIpPacketInTest(PacketInTest):
     @autocleanup
     def runTest(self):
-        pkt = testutils.simple_ip_packet(pktlen=60)
+        pkt = testutils.simple_ip_packet(pktlen=80)
         self.runPacketInTest(pkt)
 
 
