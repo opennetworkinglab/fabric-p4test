@@ -12,7 +12,7 @@ PTF is a framework for data plane testing:
 <https://github.com/p4lang/PTF>
 
 ## Run the tests
-Instructions to run the PTF-based tests are available insider the `tests/ptf`
+Instructions to run the PTF-based tests are available inside the `tests/ptf`
 directory.
 
 ## Support
