@@ -328,7 +328,7 @@ class ArpBroadcastTest(FabricTest):
             verify_untagged_ports.discard(inport)
             for uport in verify_untagged_ports:
                 testutils.verify_packet(self, arp_pkt, uport)
-            testutils.verify_no_other_packets(self)
+        testutils.verify_no_other_packets(self)
 
 
 @group("multicast")
