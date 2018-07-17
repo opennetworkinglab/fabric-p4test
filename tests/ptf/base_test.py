@@ -19,8 +19,10 @@
 #
 
 import Queue
+import sys
 import threading
 import time
+from StringIO import StringIO
 from collections import Counter
 from functools import wraps, partial
 from unittest import SkipTest
@@ -29,11 +31,14 @@ import google.protobuf.text_format
 import grpc
 import ptf
 import ptf.testutils as testutils
+import scapy.packet
+import scapy.utils
 from google.rpc import status_pb2, code_pb2
-from p4.v1 import p4runtime_pb2
 from p4.config.v1 import p4info_pb2
+from p4.v1 import p4runtime_pb2
 from ptf import config
 from ptf.base_tests import BaseTest
+from ptf.dataplane import match_exp_pkt
 
 
 # See https://gist.github.com/carymrobbins/8940382
@@ -64,6 +69,32 @@ def ipv4_to_binary(addr):
 def mac_to_binary(addr):
     bytes_ = [int(b, 16) for b in addr.split(':')]
     return "".join(chr(b) for b in bytes_)
+
+
+def format_pkt_match(received_pkt, expected_pkt):
+    # Taken from PTF dataplane class
+    stdout_save = sys.stdout
+    try:
+        # The scapy packet dissection methods print directly to stdout,
+        # so we have to redirect stdout to a string.
+        sys.stdout = StringIO()
+
+        print "========== EXPECTED =========="
+        if isinstance(expected_pkt, scapy.packet.Packet):
+            scapy.packet.ls(expected_pkt)
+            print '--'
+        scapy.utils.hexdump(expected_pkt)
+        print "========== RECEIVED =========="
+        if isinstance(received_pkt, scapy.packet.Packet):
+            scapy.packet.ls(received_pkt)
+            print '--'
+        scapy.utils.hexdump(received_pkt)
+        print "=============================="
+
+        return sys.stdout.getvalue()
+    finally:
+        sys.stdout.close()
+        sys.stdout = stdout_save  # Restore the original stdout.
 
 
 # Used to indicate that the gRPC error Status object returned by the server has
@@ -256,6 +287,19 @@ class P4RuntimeTest(BaseTest):
             self.fail("Packet in not received")
         else:
             return msg.packet
+
+    def verify_packet_in(self, exp_pkt, exp_in_port, timeout=2):
+        pkt_in_msg = self.get_packet_in(timeout=timeout)
+        in_port_ = stringify(exp_in_port, 2)
+        rx_in_port_ = pkt_in_msg.metadata[0].value
+        if in_port_ != rx_in_port_:
+            rx_inport = struct.unpack("!h", rx_in_port_)[0]
+            self.fail("Wrong packet-in ingress port, expected {} but received was {}"
+                      .format(exp_in_port, rx_inport))
+        rx_pkt = Ether(pkt_in_msg.payload)
+        if not match_exp_pkt(exp_pkt, rx_pkt):
+            self.fail("Received packet-in is not the expected one\n"
+                      + format_pkt_match(rx_pkt, exp_pkt))
 
     def get_stream_packet(self, type_, timeout=1):
         start = time.time()
