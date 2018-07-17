@@ -94,20 +94,21 @@ class FabricTest(P4RuntimeTest):
                 action, [])
         self.write_request(req)
 
-    def set_internal_vlan(self, ingress_port, vlan_valid=False,
-                          vlan_id=0, vlan_id_mask=0,
-                          new_vlan_id=0):
+    def set_ingress_port_vlan(self, ingress_port, vlan_valid=False,
+                              vlan_id=0,
+                              new_vlan_id=0):
         ingress_port_ = stringify(ingress_port, 2)
         vlan_valid_ = '\x01' if vlan_valid else '\x00'
         vlan_id_ = stringify(vlan_id, 2)
-        vlan_id_mask_ = stringify(vlan_id_mask, 2)
+        vlan_id_mask_ = stringify(4095 if vlan_valid else 0, 2)
         new_vlan_id_ = stringify(new_vlan_id, 2)
+        action_name = "set_vlan" if vlan_valid else "push_internal_vlan"
         self.send_request_add_entry_to_action(
             "filtering.ingress_port_vlan",
             [self.Exact("standard_metadata.ingress_port", ingress_port_),
              self.Exact("hdr.vlan_tag.is_valid", vlan_valid_),
              self.Ternary("hdr.vlan_tag.vlan_id", vlan_id_, vlan_id_mask_)],
-            "filtering.push_internal_vlan", [("new_vlan_id", new_vlan_id_)],
+            "filtering." + action_name, [("new_vlan_id", new_vlan_id_)],
             DEFAULT_PRIORITY)
 
     def set_egress_vlan_pop(self, egress_port, vlan_id):
@@ -171,6 +172,14 @@ class FabricTest(P4RuntimeTest):
             "next.simple",
             [self.Exact("fabric_metadata.next_id", next_id_)],
             "next.output_simple", [("port_num", egress_port_)])
+
+    def add_next_multicast(self, next_id, mcast_group_id):
+        next_id_ = stringify(next_id, 4)
+        mcast_group_id_ = stringify(mcast_group_id, 2)
+        self.send_request_add_entry_to_action(
+            "next.multicast",
+            [self.Exact("fabric_metadata.next_id", next_id_)],
+            "next.set_mcast_group", [("gid", mcast_group_id_)])
 
     def add_next_hop_L3(self, next_id, egress_port, smac, dmac):
         next_id_ = stringify(next_id, 4)
@@ -239,14 +248,28 @@ class FabricTest(P4RuntimeTest):
             [self.Exact("fabric_metadata.next_id", next_id_)],
             grp_id)
 
+    def add_mcast_group(self, group_id, ports):
+        req = p4runtime_pb2.WriteRequest()
+        req.device_id = self.device_id
+        update = req.updates.add()
+        update.type = p4runtime_pb2.Update.INSERT
+        pre_entry = update.entity.packet_replication_engine_entry
+        mg_entry = pre_entry.multicast_group_entry
+        mg_entry.multicast_group_id = group_id
+        for port in ports:
+            replica = mg_entry.replicas.add()
+            replica.egress_port = port
+            replica.instance = 0
+        return req, self.write_request(req)
+
 
 class FabricL2UnicastTest(FabricTest):
     @autocleanup
     def runTest(self):
         mac_addr_mask = ":".join(["ff"] * 6)
         vlan_id = 10
-        self.set_internal_vlan(self.port1, False, 0, 0, vlan_id)
-        self.set_internal_vlan(self.port2, False, 0, 0, vlan_id)
+        self.set_ingress_port_vlan(self.port1, False, 0, vlan_id)
+        self.set_ingress_port_vlan(self.port2, False, 0, vlan_id)
         # miss on filtering.fwd_classifier => bridging
         self.add_bridging_entry(vlan_id, HOST1_MAC, mac_addr_mask, 10)
         self.add_bridging_entry(vlan_id, HOST2_MAC, mac_addr_mask, 20)
@@ -272,12 +295,75 @@ class FabricL2UnicastTest(FabricTest):
         testutils.verify_packets(self, exp_pkt_2to1, [self.port1])
 
 
+class ArpBroadcastTest(FabricTest):
+    def runArpBroadcastTest(self, tagged_ports, untagged_ports):
+        mac_addr_mask = ":".join(["ff"] * 6)
+        vlan_id = 10
+        next_id = vlan_id
+        mcast_group_id = vlan_id
+        all_ports = set(tagged_ports + untagged_ports)
+        arp_pkt = testutils.simple_arp_packet(pktlen=76)
+        # Account for VLAN header size in total pktlen
+        vlan_arp_pkt = testutils.simple_arp_packet(vlan_vid=vlan_id, pktlen=80)
+
+        for port in tagged_ports:
+            self.set_ingress_port_vlan(port, True, vlan_id, vlan_id)
+        for port in untagged_ports:
+            self.set_ingress_port_vlan(port, False, 0, vlan_id)
+        self.add_bridging_entry(vlan_id, arp_pkt.dst, mac_addr_mask, next_id)
+        self.add_next_multicast(next_id, mcast_group_id)
+        self.add_mcast_group(mcast_group_id, all_ports)
+        for port in untagged_ports:
+            self.set_egress_vlan_pop(port, vlan_id)
+
+        for inport in all_ports:
+            pkt_to_send = vlan_arp_pkt if inport in tagged_ports else arp_pkt
+            testutils.send_packet(self, inport, str(pkt_to_send))
+            # Packet should be received on all ports expect the ingress one.
+            verify_tagged_ports = set(tagged_ports)
+            verify_tagged_ports.discard(inport)
+            for tport in verify_tagged_ports:
+                testutils.verify_packet(self, vlan_arp_pkt, tport)
+            verify_untagged_ports = set(untagged_ports)
+            verify_untagged_ports.discard(inport)
+            for uport in verify_untagged_ports:
+                testutils.verify_packet(self, arp_pkt, uport)
+            testutils.verify_no_other_packets(self)
+
+
+@group("multicast")
+class FabricArpBroadcastUntaggedTest(ArpBroadcastTest):
+    @autocleanup
+    def runTest(self):
+        self.runArpBroadcastTest(
+            tagged_ports=[],
+            untagged_ports=[self.port1, self.port2, self.port3])
+
+
+@group("multicast")
+class FabricArpBroadcastTaggedTest(ArpBroadcastTest):
+    @autocleanup
+    def runTest(self):
+        self.runArpBroadcastTest(
+            tagged_ports=[self.port1, self.port2, self.port3],
+            untagged_ports=[])
+
+
+@group("multicast")
+class FabricArpBroadcastMixedTest(ArpBroadcastTest):
+    @autocleanup
+    def runTest(self):
+        self.runArpBroadcastTest(
+            tagged_ports=[self.port2, self.port3],
+            untagged_ports=[self.port1])
+
+
 class FabricIPv4UnicastTest(FabricTest):
     @autocleanup
     def runTest(self):
         vlan_id = 10
-        self.set_internal_vlan(self.port1, False, 0, 0, vlan_id)
-        self.set_internal_vlan(self.port2, False, 0, 0, vlan_id)
+        self.set_ingress_port_vlan(self.port1, False, 0, vlan_id)
+        self.set_ingress_port_vlan(self.port2, False, 0, vlan_id)
         self.set_forwarding_type(self.port1, SWITCH_MAC, 0x800,
                                  FORWARDING_TYPE_UNICAST_IPV4)
         self.set_forwarding_type(self.port2, SWITCH_MAC, 0x800,
@@ -314,7 +400,7 @@ class FabricIPv4UnicastGroupTest(FabricTest):
     @autocleanup
     def runTest(self):
         vlan_id = 10
-        self.set_internal_vlan(self.port1, False, 0, 0, vlan_id)
+        self.set_ingress_port_vlan(self.port1, False, 0, vlan_id)
         self.set_forwarding_type(self.port1, SWITCH_MAC, 0x800,
                                  FORWARDING_TYPE_UNICAST_IPV4)
         self.add_forwarding_unicast_v4_entry(HOST2_IPV4, 24, 300)
@@ -332,10 +418,10 @@ class FabricIPv4UnicastGroupTest(FabricTest):
             ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4, ip_ttl=64)
         exp_pkt_to2 = testutils.simple_tcp_packet(
             eth_src=SWITCH_MAC, eth_dst=HOST2_MAC,
-            ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4, ip_ttl=64)
+            ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4, ip_ttl=63)
         exp_pkt_to3 = testutils.simple_tcp_packet(
             eth_src=SWITCH_MAC, eth_dst=HOST3_MAC,
-            ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4, ip_ttl=64)
+            ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4, ip_ttl=63)
 
         testutils.send_packet(self, self.port1, str(pkt_from1))
         testutils.verify_any_packet_any_port(
@@ -346,7 +432,7 @@ class FabricIPv4MPLSTest(FabricTest):
     @autocleanup
     def runTest(self):
         vlan_id = 10
-        self.set_internal_vlan(self.port1, False, 0, 0, vlan_id)
+        self.set_ingress_port_vlan(self.port1, False, 0, vlan_id)
         self.set_forwarding_type(self.port1, SWITCH_MAC, 0x800,
                                  FORWARDING_TYPE_UNICAST_IPV4)
         self.add_forwarding_unicast_v4_entry(HOST2_IPV4, 24, 400)
@@ -375,7 +461,7 @@ class FabricIPv4MPLSGroupTest(FabricTest):
     @autocleanup
     def runTest(self):
         vlan_id = 10
-        self.set_internal_vlan(self.port1, False, 0, 0, vlan_id)
+        self.set_ingress_port_vlan(self.port1, False, 0, vlan_id)
         self.set_forwarding_type(self.port1, SWITCH_MAC, 0x800,
                                  FORWARDING_TYPE_UNICAST_IPV4)
         self.add_forwarding_unicast_v4_entry(HOST2_IPV4, 24, 500)
@@ -445,7 +531,7 @@ class PacketInTest(FabricTest):
         vlan_id = 10
         self.add_forwarding_acl_cpu_entry(eth_type=pkt.type)
         for port in [self.port1, self.port2]:
-            self.set_internal_vlan(port, False, 0, 0, vlan_id)
+            self.set_ingress_port_vlan(port, False, 0, vlan_id)
             testutils.send_packet(self, port, str(pkt))
             self.verify_packet_in(pkt, port)
             testutils.verify_no_other_packets(self)
@@ -570,10 +656,10 @@ class SpgwMPLSTest(SpgwTest):
         self.mpls_label = 204
 
         # internal vlan required for MPLS
-        self.set_internal_vlan(self.port1, vlan_valid=False,
-                               vlan_id=0, vlan_id_mask=0, new_vlan_id=4094)
-        self.set_internal_vlan(self.port2, vlan_valid=False,
-                               vlan_id=0, vlan_id_mask=0, new_vlan_id=20)
+        self.set_ingress_port_vlan(self.port1, vlan_valid=False,
+                                   vlan_id=0, new_vlan_id=4094)
+        self.set_ingress_port_vlan(self.port2, vlan_valid=False,
+                                   vlan_id=0, new_vlan_id=20)
         self.add_forwarding_unicast_v4_entry(self.S1U_ENB_IPV4, 32, 1)
         self.add_forwarding_unicast_v4_entry(self.END_POINT_IPV4, 32, 2)
         self.add_next_hop_L3(1, self.port2, self.SWITCH_MAC_2, self.DMAC_2)
