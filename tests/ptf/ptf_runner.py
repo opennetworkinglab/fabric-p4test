@@ -217,6 +217,9 @@ def main():
     parser.add_argument('--skip-config',
                         help='Assume a device with pipeline already configured',
                         action="store_true", default=False)
+    parser.add_argument('--skip-test',
+                        help='Skip test execution (useful to perform only pipeline configuration)',
+                        action="store_true", default=False)
     args, unknown_args = parser.parse_known_args()
 
     if not check_ptf():
@@ -261,6 +264,8 @@ def main():
 
     try:
 
+        success = True
+
         if not args.skip_config:
             success = update_config(p4info_path=args.p4info,
                                     bmv2_json_path=bmv2_json,
@@ -268,17 +273,18 @@ def main():
                                     tofino_cxt_json_path=tofino_ctx_json,
                                     grpc_addr=args.grpc_addr,
                                     device_id=args.device_id)
-            if not success:
-                if bmv2_sw is not None:
-                    bmv2_sw.kill()
-                sys.exit(2)
+        if not success:
+            if bmv2_sw is not None:
+                bmv2_sw.kill()
+            sys.exit(2)
 
-        success = run_test(p4info_path=args.p4info,
-                           grpc_addr=args.grpc_addr,
-                           ptfdir=args.ptf_dir,
-                           port_map_path=args.port_map,
-                           platform=args.platform,
-                           extra_args=unknown_args)
+        if not args.skip_test:
+            success = run_test(p4info_path=args.p4info,
+                               grpc_addr=args.grpc_addr,
+                               ptfdir=args.ptf_dir,
+                               port_map_path=args.port_map,
+                               platform=args.platform,
+                               extra_args=unknown_args)
 
         if bmv2_sw is not None:
             bmv2_sw.kill()
