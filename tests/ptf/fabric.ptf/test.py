@@ -297,7 +297,7 @@ class FabricL2UnicastTest(FabricTest):
 
 class ArpBroadcastTest(FabricTest):
     def runArpBroadcastTest(self, tagged_ports, untagged_ports):
-        mac_addr_mask = ":".join(["ff"] * 6)
+        zero_mac_addr = ":".join(["00"] * 6)
         vlan_id = 10
         next_id = vlan_id
         mcast_group_id = vlan_id
@@ -310,7 +310,7 @@ class ArpBroadcastTest(FabricTest):
             self.set_ingress_port_vlan(port, True, vlan_id, vlan_id)
         for port in untagged_ports:
             self.set_ingress_port_vlan(port, False, 0, vlan_id)
-        self.add_bridging_entry(vlan_id, arp_pkt.dst, mac_addr_mask, next_id)
+        self.add_bridging_entry(vlan_id, zero_mac_addr, zero_mac_addr, next_id)
         self.add_next_multicast(next_id, mcast_group_id)
         self.add_mcast_group(mcast_group_id, all_ports)
         for port in untagged_ports:
