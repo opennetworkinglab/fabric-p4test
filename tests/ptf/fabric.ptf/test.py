@@ -294,13 +294,14 @@ class FabricL2UnicastTest(FabricTest):
         testutils.send_packet(self, self.port2, str(pkt_2to1))
         testutils.verify_packets(self, exp_pkt_2to1, [self.port1])
 
+
 class FabricL2UnicastVlanTest(FabricTest):
     @autocleanup
     def runTest(self):
         mac_addr_mask = ":".join(["ff"] * 6)
         vlan_id = 10
         # set internal VLAN for port 2 only since packet from port 1 is tagged
-        self.set_internal_vlan(self.port2, False, 0, 0, vlan_id)
+        self.set_ingress_port_vlan(self.port2, False, 0, vlan_id)
         # miss on filtering.fwd_classifier => bridging
         self.add_bridging_entry(vlan_id, HOST1_MAC, mac_addr_mask, 10)
         self.add_bridging_entry(vlan_id, HOST2_MAC, mac_addr_mask, 20)
@@ -310,10 +311,11 @@ class FabricL2UnicastVlanTest(FabricTest):
         self.set_egress_vlan_pop(self.port2, vlan_id)
 
         pkt_1to2 = testutils.simple_tcp_packet(
-            eth_src=HOST1_MAC, eth_dst=HOST2_MAC, dl_vlan_enable=True, vlan_vid=vlan_id, ip_ttl=64)
+            eth_src=HOST1_MAC, eth_dst=HOST2_MAC, dl_vlan_enable=True,
+            vlan_vid=vlan_id, ip_ttl=64)
         exp_pkt_1to2 = testutils.simple_tcp_packet(
             eth_src=HOST1_MAC, eth_dst=HOST2_MAC,
-            ip_ttl=63, pktlen=96) # packet length will decrease
+            ip_ttl=63, pktlen=96)  # packet length will decrease
 
         testutils.send_packet(self, self.port1, str(pkt_1to2))
         testutils.verify_packets(self, exp_pkt_1to2, [self.port2])
@@ -322,10 +324,11 @@ class FabricL2UnicastVlanTest(FabricTest):
             eth_src=HOST2_MAC, eth_dst=HOST1_MAC, ip_ttl=64)
         exp_pkt_2to1 = testutils.simple_tcp_packet(
             eth_src=HOST2_MAC, eth_dst=HOST1_MAC, dl_vlan_enable=True,
-            vlan_vid=vlan_id, ip_ttl=63, pktlen=104) # packet length will increase
+            vlan_vid=vlan_id, ip_ttl=63, pktlen=104)  # packet length will increase
 
         testutils.send_packet(self, self.port2, str(pkt_2to1))
         testutils.verify_packets(self, exp_pkt_2to1, [self.port1])
+
 
 class ArpBroadcastTest(FabricTest):
     def runArpBroadcastTest(self, tagged_ports, untagged_ports):
