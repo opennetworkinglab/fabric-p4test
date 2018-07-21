@@ -195,6 +195,10 @@ class P4RuntimeTest(BaseTest):
         if grpc_addr is None:
             grpc_addr = 'localhost:50051'
 
+        self.cpu_port = int(testutils.test_param_get("cpu_port"))
+        if self.cpu_port is None:
+            self.fail("CPU port is not set")
+
         pltfm = testutils.test_param_get("pltfm")
         if pltfm is not None and pltfm == 'hw' and getattr(self, "_skip_on_hw", False):
             raise SkipTest("Skipping test in HW")
