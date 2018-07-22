@@ -52,6 +52,8 @@ HOST3_MAC = "00:00:00:00:00:03"
 HOST1_IPV4 = "10.0.1.1"
 HOST2_IPV4 = "10.0.2.1"
 
+ETH_TYPE_ARP = 0x0806
+ETH_TYPE_IPV4 = 0x0800
 
 def make_gtp(msg_len, teid, flags=0x30, msg_type=0xff):
     """Convenience function since GTP header has no scapy support"""
@@ -346,7 +348,7 @@ class ArpBroadcastTest(FabricTest):
         for port in untagged_ports:
             self.set_ingress_port_vlan(port, False, 0, vlan_id)
         self.add_bridging_entry(vlan_id, zero_mac_addr, zero_mac_addr, next_id)
-        self.add_forwarding_acl_cpu_entry(eth_type=arp_pkt.type, clone=True)
+        self.add_forwarding_acl_cpu_entry(eth_type=ETH_TYPE_ARP, clone=True)
         self.add_next_multicast(next_id, mcast_group_id)
         # FIXME: use clone session APIs when supported on PI
         # For now we add the CPU port to the mc group.
@@ -566,14 +568,16 @@ class FabricLongIpPacketOutTest(PacketOutTest):
 
 
 class PacketInTest(FabricTest):
-    def runPacketInTest(self, pkt):
-        vlan_id = 10
-        self.add_forwarding_acl_cpu_entry(eth_type=pkt.type)
+    def runPacketInTest(self, pkt, eth_type, tagged=False, vlan_id=10):
+        self.add_forwarding_acl_cpu_entry(eth_type=eth_type)
         for port in [self.port1, self.port2]:
-            self.set_ingress_port_vlan(port, False, 0, vlan_id)
+            if tagged:
+                self.set_ingress_port_vlan(port, True, vlan_id, vlan_id)
+            else:
+                self.set_ingress_port_vlan(port, False, 0, vlan_id)
             testutils.send_packet(self, port, str(pkt))
             self.verify_packet_in(pkt, port)
-            testutils.verify_no_other_packets(self)
+        testutils.verify_no_other_packets(self)
 
 
 @group("packetio")
@@ -581,7 +585,7 @@ class FabricArpPacketInTest(PacketInTest):
     @autocleanup
     def runTest(self):
         pkt = testutils.simple_arp_packet(pktlen=80)
-        self.runPacketInTest(pkt)
+        self.runPacketInTest(pkt, ETH_TYPE_ARP)
 
 
 @group("packetio")
@@ -589,7 +593,7 @@ class FabricLongIpPacketInTest(PacketInTest):
     @autocleanup
     def runTest(self):
         pkt = testutils.simple_ip_packet(pktlen=160)
-        self.runPacketInTest(pkt)
+        self.runPacketInTest(pkt, ETH_TYPE_IPV4)
 
 
 @group("packetio")
@@ -597,7 +601,15 @@ class FabricShortIpPacketInTest(PacketInTest):
     @autocleanup
     def runTest(self):
         pkt = testutils.simple_ip_packet(pktlen=80)
-        self.runPacketInTest(pkt)
+        self.runPacketInTest(pkt, ETH_TYPE_IPV4)
+
+
+@group("packetio")
+class FabricTaggedPacketInTest(PacketInTest):
+    @autocleanup
+    def runTest(self):
+        pkt = testutils.simple_ip_packet(dl_vlan_enable=True, vlan_vid=10, pktlen=160)
+        self.runPacketInTest(pkt, ETH_TYPE_IPV4, tagged=True, vlan_id=10)
 
 
 class SpgwTest(FabricTest):
