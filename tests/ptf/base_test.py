@@ -298,8 +298,7 @@ class P4RuntimeTest(BaseTest):
                       .format(exp_in_port, rx_inport))
         rx_pkt = Ether(pkt_in_msg.payload)
         if not match_exp_pkt(exp_pkt, rx_pkt):
-            self.fail("Received packet-in is not the expected one\n"
-                      + format_pkt_match(rx_pkt, exp_pkt))
+            self.fail("Received packet-in is not the expected one\n" + format_pkt_match(rx_pkt, exp_pkt))
 
     def get_stream_packet(self, type_, timeout=1):
         start = time.time()
