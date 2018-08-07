@@ -12,6 +12,15 @@ in the Python path.
 pre-compiled artifacts (no need to build ONOS, simply clone the repo)
 - Set `ONOS_ROOT` env variable to the location where you cloned the ONOS repo
 
+### ONOS+P4 Developer VM
+
+Alternatively, you can download this VM with all the necessary dependencies already installed:
+
+[Instructions to download and use the ONOS+P4 Developer VM](https://wiki.onosproject.org/x/FYnV#P4RuntimesupportinONOS-ONOS+P4DeveloperVM)
+
+The link provides also instructions to use Vagrant to build the VM locally.
+
+
 ## Before running the tests
 
 ### Fabric profiles
@@ -73,6 +82,9 @@ of the test machine.
 cd <path to bmv2 repo>/tools
 sudo ./veth_setup.sh
 ```
+
+If using the ONOS-P4 Dev VM, the `veth_setup.sh` script will be located
+under `/home/sdn`.
 
 2. Run the PTF tests using a convenient `make` command:
 

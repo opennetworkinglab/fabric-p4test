@@ -116,7 +116,7 @@ def update_config(p4info_path, bmv2_json_path, tofino_bin_path,
     return True
 
 
-def run_test(p4info_path, grpc_addr, ptfdir, port_map_path, platform=None, extra_args=()):
+def run_test(p4info_path, grpc_addr, cpu_port, ptfdir, port_map_path, platform=None, extra_args=()):
     """
     Runs PTF tests included in provided directory.
     Device must be running and configfured with appropriate P4 program.
@@ -151,6 +151,7 @@ def run_test(p4info_path, grpc_addr, ptfdir, port_map_path, platform=None, extra
     cmd.extend(ifaces)
     test_params = 'p4info=\'{}\''.format(p4info_path)
     test_params += ';grpcaddr=\'{}\''.format(grpc_addr)
+    test_params += ';cpu_port=\'{}\''.format(cpu_port)
     if platform is not None:
         test_params += ';pltfm=\'{}\''.format(platform)
     cmd.append('--test-params={}'.format(test_params))
@@ -205,6 +206,9 @@ def main():
     parser.add_argument('--device-id',
                         help='Device id for device under test',
                         type=int, default=0)
+    parser.add_argument('--cpu-port',
+                        help='CPU port ID of device under test',
+                        type=int, required=True)
     parser.add_argument('--ptf-dir',
                         help='Directory containing PTF tests',
                         type=str, required=True)
@@ -258,7 +262,7 @@ def main():
         bmv2_sw = Bmv2Switch(device_id=args.device_id,
                              port_map_path=args.port_map,
                              grpc_port=grpc_port,
-                             cpu_port=255,
+                             cpu_port=args.cpu_port,
                              loglevel='debug')
         bmv2_sw.start()
 
@@ -281,6 +285,7 @@ def main():
         if not args.skip_test:
             success = run_test(p4info_path=args.p4info,
                                grpc_addr=args.grpc_addr,
+                               cpu_port=args.cpu_port,
                                ptfdir=args.ptf_dir,
                                port_map_path=args.port_map,
                                platform=args.platform,

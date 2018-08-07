@@ -1,4 +1,4 @@
-PTF_BMV2_CMD = sudo ./ptf_runner.py --device bmv2 --port-map port_map.veth.json --ptf-dir fabric.ptf
+PTF_BMV2_CMD = sudo ./ptf_runner.py --device bmv2 --port-map port_map.veth.json --ptf-dir fabric.ptf --cpu-port 255
 BASE_P4C_OUT_PATH = ${ONOS_ROOT}/pipelines/fabric/src/main/resources/p4c-out
 FABRIC_OUT = ${BASE_P4C_OUT_PATH}/fabric/bmv2/default
 FABRIC_SPGW_OUT = ${BASE_P4C_OUT_PATH}/fabric-spgw/bmv2/default

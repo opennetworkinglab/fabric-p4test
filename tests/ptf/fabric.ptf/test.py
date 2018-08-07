@@ -52,6 +52,9 @@ HOST3_MAC = "00:00:00:00:00:03"
 HOST1_IPV4 = "10.0.1.1"
 HOST2_IPV4 = "10.0.2.1"
 
+ETH_TYPE_ARP = 0x0806
+ETH_TYPE_IPV4 = 0x0800
+
 
 def make_gtp(msg_len, teid, flags=0x30, msg_type=0xff):
     """Convenience function since GTP header has no scapy support"""
@@ -130,7 +133,7 @@ class FabricTest(P4RuntimeTest):
             "filtering.fwd_classifier",
             [self.Exact("standard_metadata.ingress_port", ingress_port_),
              self.Exact("hdr.ethernet.dst_addr", eth_dstAddr_),
-             self.Exact("fabric_metadata.original_ether_type", ethertype_)],
+             self.Exact("hdr.vlan_tag.ether_type", ethertype_)],
             "filtering.set_forwarding_type", [("fwd_type", fwd_type_)])
 
     def add_bridging_entry(self, vlan_id, eth_dstAddr, eth_dstAddr_mask,
@@ -156,13 +159,14 @@ class FabricTest(P4RuntimeTest):
             [self.Lpm("hdr.ipv4.dst_addr", ipv4_dstAddr_, ipv4_pLen)],
             "forwarding.set_next_id_unicast_v4", [("next_id", next_id_)])
 
-    def add_forwarding_acl_cpu_entry(self, eth_type=None):
+    def add_forwarding_acl_cpu_entry(self, eth_type=None, clone=False):
         eth_type_ = stringify(eth_type, 2)
         eth_type_mask = stringify(0xFFFF, 2)
+        action_name = "clone_to_cpu" if clone else "punt_to_cpu"
         self.send_request_add_entry_to_action(
             "forwarding.acl",
-            [self.Ternary("fabric_metadata.original_ether_type", eth_type_, eth_type_mask)],
-            "forwarding.send_to_controller", [],
+            [self.Ternary("hdr.vlan_tag.ether_type", eth_type_, eth_type_mask)],
+            "forwarding." + action_name, [],
             DEFAULT_PRIORITY)
 
     def add_next_hop(self, next_id, egress_port):
@@ -336,25 +340,28 @@ class ArpBroadcastTest(FabricTest):
         vlan_id = 10
         next_id = vlan_id
         mcast_group_id = vlan_id
-        all_ports = set(tagged_ports + untagged_ports)
+        all_ports = tagged_ports + untagged_ports
         arp_pkt = testutils.simple_arp_packet(pktlen=76)
         # Account for VLAN header size in total pktlen
         vlan_arp_pkt = testutils.simple_arp_packet(vlan_vid=vlan_id, pktlen=80)
-
         for port in tagged_ports:
             self.set_ingress_port_vlan(port, True, vlan_id, vlan_id)
         for port in untagged_ports:
             self.set_ingress_port_vlan(port, False, 0, vlan_id)
         self.add_bridging_entry(vlan_id, zero_mac_addr, zero_mac_addr, next_id)
+        self.add_forwarding_acl_cpu_entry(eth_type=ETH_TYPE_ARP, clone=True)
         self.add_next_multicast(next_id, mcast_group_id)
-        self.add_mcast_group(mcast_group_id, all_ports)
+        # FIXME: use clone session APIs when supported on PI
+        # For now we add the CPU port to the mc group.
+        self.add_mcast_group(mcast_group_id, all_ports + [self.cpu_port])
         for port in untagged_ports:
             self.set_egress_vlan_pop(port, vlan_id)
 
         for inport in all_ports:
             pkt_to_send = vlan_arp_pkt if inport in tagged_ports else arp_pkt
             testutils.send_packet(self, inport, str(pkt_to_send))
-            # Packet should be received on all ports expect the ingress one.
+            # Pkt should be received on CPU and on all ports, except the ingress one.
+            self.verify_packet_in(exp_pkt=pkt_to_send, exp_in_port=inport)
             verify_tagged_ports = set(tagged_ports)
             verify_tagged_ports.discard(inport)
             for tport in verify_tagged_ports:
@@ -562,14 +569,16 @@ class FabricLongIpPacketOutTest(PacketOutTest):
 
 
 class PacketInTest(FabricTest):
-    def runPacketInTest(self, pkt):
-        vlan_id = 10
-        self.add_forwarding_acl_cpu_entry(eth_type=pkt.type)
+    def runPacketInTest(self, pkt, eth_type, tagged=False, vlan_id=10):
+        self.add_forwarding_acl_cpu_entry(eth_type=eth_type)
         for port in [self.port1, self.port2]:
-            self.set_ingress_port_vlan(port, False, 0, vlan_id)
+            if tagged:
+                self.set_ingress_port_vlan(port, True, vlan_id, vlan_id)
+            else:
+                self.set_ingress_port_vlan(port, False, 0, vlan_id)
             testutils.send_packet(self, port, str(pkt))
             self.verify_packet_in(pkt, port)
-            testutils.verify_no_other_packets(self)
+        testutils.verify_no_other_packets(self)
 
 
 @group("packetio")
@@ -577,7 +586,7 @@ class FabricArpPacketInTest(PacketInTest):
     @autocleanup
     def runTest(self):
         pkt = testutils.simple_arp_packet(pktlen=80)
-        self.runPacketInTest(pkt)
+        self.runPacketInTest(pkt, ETH_TYPE_ARP)
 
 
 @group("packetio")
@@ -585,7 +594,7 @@ class FabricLongIpPacketInTest(PacketInTest):
     @autocleanup
     def runTest(self):
         pkt = testutils.simple_ip_packet(pktlen=160)
-        self.runPacketInTest(pkt)
+        self.runPacketInTest(pkt, ETH_TYPE_IPV4)
 
 
 @group("packetio")
@@ -593,7 +602,15 @@ class FabricShortIpPacketInTest(PacketInTest):
     @autocleanup
     def runTest(self):
         pkt = testutils.simple_ip_packet(pktlen=80)
-        self.runPacketInTest(pkt)
+        self.runPacketInTest(pkt, ETH_TYPE_IPV4)
+
+
+@group("packetio")
+class FabricTaggedPacketInTest(PacketInTest):
+    @autocleanup
+    def runTest(self):
+        pkt = testutils.simple_ip_packet(dl_vlan_enable=True, vlan_vid=10, pktlen=160)
+        self.runPacketInTest(pkt, ETH_TYPE_IPV4, tagged=True, vlan_id=10)
 
 
 class SpgwTest(FabricTest):
