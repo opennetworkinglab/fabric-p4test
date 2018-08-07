@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/opennetworkinglab/fabric-p4test.svg?branch=master)](https://travis-ci.org/opennetworkinglab/fabric-p4test)
+
 # fabric-p4test
 
 This repo contains PTF-based tests for fabric.p4.
