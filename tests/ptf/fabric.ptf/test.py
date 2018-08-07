@@ -55,6 +55,7 @@ HOST2_IPV4 = "10.0.2.1"
 ETH_TYPE_ARP = 0x0806
 ETH_TYPE_IPV4 = 0x0800
 
+
 def make_gtp(msg_len, teid, flags=0x30, msg_type=0xff):
     """Convenience function since GTP header has no scapy support"""
     return struct.pack(">BBHL", flags, msg_type, msg_len, teid)
