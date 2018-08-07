@@ -132,7 +132,7 @@ class FabricTest(P4RuntimeTest):
             "filtering.fwd_classifier",
             [self.Exact("standard_metadata.ingress_port", ingress_port_),
              self.Exact("hdr.ethernet.dst_addr", eth_dstAddr_),
-             self.Exact("fabric_metadata.original_ether_type", ethertype_)],
+             self.Exact("hdr.vlan_tag.ether_type", ethertype_)],
             "filtering.set_forwarding_type", [("fwd_type", fwd_type_)])
 
     def add_bridging_entry(self, vlan_id, eth_dstAddr, eth_dstAddr_mask,
@@ -164,7 +164,7 @@ class FabricTest(P4RuntimeTest):
         action_name = "clone_to_cpu" if clone else "punt_to_cpu"
         self.send_request_add_entry_to_action(
             "forwarding.acl",
-            [self.Ternary("fabric_metadata.original_ether_type", eth_type_, eth_type_mask)],
+            [self.Ternary("hdr.vlan_tag.ether_type", eth_type_, eth_type_mask)],
             "forwarding." + action_name, [],
             DEFAULT_PRIORITY)
 
