@@ -63,7 +63,7 @@ make <profile-name>
 ### Compile for other targets
 
 Compile fabric.p4 with the desired backend and preprocessor flags. For example,
-to compile for for Tofino:
+to compile for Tofino:
 
 ```
 cd $ONOS_ROOT/pipelines/fabric/src/main/resources/
@@ -78,53 +78,70 @@ p4c --target tofino --arch v1model -DWITH_SPGW -o fabric-spgw.out \
 should be executed only once before executing any PTF test, or after a reboot
 of the test machine.
 
-```
-cd <path to bmv2 repo>/tools
-sudo ./veth_setup.sh
-```
+    ```
+    cd <path to bmv2 repo>/tools
+    sudo ./veth_setup.sh
+    ```
 
 If using the ONOS-P4 Dev VM, the `veth_setup.sh` script will be located
 under `/home/sdn`.
 
 2. Run the PTF tests using a convenient `make` command:
 
-```
-cd fabric-p4test/tests/ptf
-make
-```
+    ```
+    cd fabric-p4test/tests/ptf
+    make
+    ```
+    
+    The `make` command will execute tests for all fabric profiles. To run tests for
+    only a specific profile:
 
-The `make` command will execute tests for all fabric profiles. To run tests for
-only a specific profile:
+    ```
+    make <profile-name>
+    ```
+    
+    Alternatively, you can run the `ptf-runner.py` script with BMv2 arguments.
+    For example, to run tests for the `fabric` profile:
 
-```
-make <profile-name>
-```
-
-Alternatively, you can run the `ptf-runner.py` script with BMv2 arguments.
-For example, to run tests for the `fabric` profile:
-
-```
-sudo ./ptf_runner.py --device bmv2 \
-    --p4info ${ONOS_ROOT}/pipelines/fabric/src/main/resources/p4c-out/fabric/bmv2/default/p4info.txt \
-    --bmv2-json ${ONOS_ROOT}/pipelines/fabric/src/main/resources/p4c-out/fabric/bmv2/default/bmv2.json \
-    --ptf-dir fabric.ptf --port-map port_map.veth.json \
-    all ^spgw
-```
+    ```
+    sudo ./ptf_runner.py --device bmv2 \
+        --p4info ${ONOS_ROOT}/pipelines/fabric/src/main/resources/p4c-out/fabric/bmv2/default/p4info.txt \
+        --bmv2-json ${ONOS_ROOT}/pipelines/fabric/src/main/resources/p4c-out/fabric/bmv2/default/bmv2.json \
+        --ptf-dir fabric.ptf --port-map port_map.veth.json \
+        all ^spgw
+    ```
 
 ## Steps to run the tests with Tofino
 
 1. Start `bf_switchd` (with `--skip-p4`) as you normally do.
    
-3. Run the PTF tests with Tofino arguments:
+2. Run `ptf_runner.py` with Tofino arguments and `--skip-test`:
 
-```
-sudo ./ptf_runner.py --device tofino \ 
-    --p4info p4info.txt \
-    --tofino-bin tofino.bin \
-    --tofino-ctx-json context.json \
-    --ptf-dir fabric.ptf --port-map port_map.veth.json \
-    all ^spgw
-```
+    ```
+    sudo ./ptf_runner.py --device tofino \ 
+        --p4info p4info.txt \
+        --tofino-bin tofino.bin \
+        --tofino-ctx-json context.json \
+        --ptf-dir fabric.ptf --port-map port_map.veth.json \
+        --skip-test
+    ```
+
+    This will configure the pipeline on the switch, but will *not* execute the
+    tests.
+
+3. Configure switch ports using `bf_switchd` CLI.
+
+4. Execute tests by running `ptf_runner.py` with `--skip-config` (since the
+pipeline is already configured):
+
+    ```
+    sudo ./ptf_runner.py --device tofino \ 
+        --p4info p4info.txt \
+        --tofino-bin tofino.bin \
+        --tofino-ctx-json context.json \
+        --ptf-dir fabric.ptf --port-map port_map.veth.json \
+        --skip-config all ^spgw
+    ```
 
 ## Running the right PTF tests for the right profile
 
