@@ -480,7 +480,7 @@ class FabricIPv4UnicastGroupTestAllPort(FabricTest):
         self.add_next_hop_L3_group(300, grp_id, mbrs)
         self.set_egress_vlan_pop(self.port2, vlan_id)
         self.set_egress_vlan_pop(self.port3, vlan_id)
-        # tcpsport_toport list is used to learn the tcp_source_port that causes the packet 
+        # tcpsport_toport list is used to learn the tcp_source_port that causes the packet
         # to be forwarded for each port
         tcpsport_toport = [None, None]
         for i in range(50):
