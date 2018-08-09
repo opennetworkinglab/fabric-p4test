@@ -469,6 +469,7 @@ class FabricIPv4UnicastGroupTest(FabricTest):
         testutils.verify_any_packet_any_port(
             self, [exp_pkt_to2, exp_pkt_to3], [self.port2, self.port3])
 
+
 class FabricIPv4UnicastGroupTestAllPort(FabricTest):
     @autocleanup
     def runTest(self):
