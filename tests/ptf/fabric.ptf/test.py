@@ -44,6 +44,7 @@ DEFAULT_PRIORITY = 10
 FORWARDING_TYPE_BRIDGING = 0
 FORWARDING_TYPE_UNICAST_IPV4 = 2
 DEFAULT_MPLS_TTL = 64
+MIN_PKT_LEN = 80
 
 SWITCH_MAC = "00:00:00:00:aa:01"
 HOST1_MAC = "00:00:00:00:00:01"
@@ -51,8 +52,10 @@ HOST2_MAC = "00:00:00:00:00:02"
 HOST3_MAC = "00:00:00:00:00:03"
 HOST1_IPV4 = "10.0.1.1"
 HOST2_IPV4 = "10.0.2.1"
-S1U_ENB_IPV4 = "1.1.1.1"
-S1U_SGW_IPV4 = "2.2.2.2"
+HOST3_IPV4 = "10.0.3.1"
+HOST4_IPV4 = "10.0.4.1"
+S1U_ENB_IPV4 = "119.0.0.10"
+S1U_SGW_IPV4 = "140.0.0.2"
 UE_IPV4 = "16.255.255.252"
 UDP_GTP_PORT = 2152
 
@@ -345,9 +348,9 @@ class ArpBroadcastTest(FabricTest):
         next_id = vlan_id
         mcast_group_id = vlan_id
         all_ports = tagged_ports + untagged_ports
-        arp_pkt = testutils.simple_arp_packet(pktlen=76)
+        arp_pkt = testutils.simple_arp_packet(pktlen=MIN_PKT_LEN - 4)
         # Account for VLAN header size in total pktlen
-        vlan_arp_pkt = testutils.simple_arp_packet(vlan_vid=vlan_id, pktlen=80)
+        vlan_arp_pkt = testutils.simple_arp_packet(vlan_vid=vlan_id, pktlen=MIN_PKT_LEN)
         for port in tagged_ports:
             self.set_ingress_port_vlan(port, True, vlan_id, vlan_id)
         for port in untagged_ports:
@@ -471,16 +474,20 @@ class FabricIPv4UnicastIcmpTest(IPv4UnicastTest):
     def runTest(self):
         pkt = testutils.simple_icmp_packet(
             eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
-            ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4)
+            ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4, pktlen=MIN_PKT_LEN)
         self.runIPv4UnicastTest(pkt, HOST2_MAC)
 
 
 class FabricIPv4UnicastGtpTest(IPv4UnicastTest):
     @autocleanup
     def runTest(self):
+        # Assert that GTP packets not meant to be processed by spgw.p4 are
+        # forwarded using the outer IP+UDP headers. For spgw.p4 to kick in
+        # outer IP dst should be in a subnet defined at compile time (see
+        # fabric.p4's parser).
         inner_udp = UDP(sport=5061, dport=5060) / ("\xab" * 128)
         pkt = Ether(src=HOST1_MAC, dst=SWITCH_MAC) / \
-              IP(src=S1U_ENB_IPV4, dst=S1U_SGW_IPV4) / \
+              IP(src=HOST3_IPV4, dst=HOST4_IPV4) / \
               UDP(sport=UDP_GTP_PORT, dport=UDP_GTP_PORT) / \
               make_gtp(20 + len(inner_udp), 0xeeffc0f0) / \
               IP(src=HOST1_IPV4, dst=HOST2_IPV4) / \
@@ -598,7 +605,7 @@ class PacketOutTest(FabricTest):
 class FabricArpPacketOutTest(PacketOutTest):
     @autocleanup
     def runTest(self):
-        pkt = testutils.simple_arp_packet(pktlen=80)
+        pkt = testutils.simple_arp_packet(pktlen=MIN_PKT_LEN)
         self.runPacketOutTest(pkt)
 
 
@@ -606,7 +613,7 @@ class FabricArpPacketOutTest(PacketOutTest):
 class FabricShortIpPacketOutTest(PacketOutTest):
     @autocleanup
     def runTest(self):
-        pkt = testutils.simple_ip_packet(pktlen=80)
+        pkt = testutils.simple_ip_packet(pktlen=MIN_PKT_LEN)
         self.runPacketOutTest(pkt)
 
 
@@ -635,7 +642,7 @@ class PacketInTest(FabricTest):
 class FabricArpPacketInTest(PacketInTest):
     @autocleanup
     def runTest(self):
-        pkt = testutils.simple_arp_packet(pktlen=80)
+        pkt = testutils.simple_arp_packet(pktlen=MIN_PKT_LEN)
         self.runPacketInTest(pkt, ETH_TYPE_ARP)
 
 
@@ -651,7 +658,7 @@ class FabricLongIpPacketInTest(PacketInTest):
 class FabricShortIpPacketInTest(PacketInTest):
     @autocleanup
     def runTest(self):
-        pkt = testutils.simple_ip_packet(pktlen=80)
+        pkt = testutils.simple_ip_packet(pktlen=MIN_PKT_LEN)
         self.runPacketInTest(pkt, ETH_TYPE_IPV4)
 
 
