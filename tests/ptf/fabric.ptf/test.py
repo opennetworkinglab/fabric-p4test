@@ -634,10 +634,17 @@ class SpgwSimpleTest(SpgwTest):
     def setUp(self):
         super(SpgwSimpleTest, self).setUp()
 
+        vlan_id = 10
+        self.set_ingress_port_vlan(self.port1, False, 0, vlan_id)
+        self.set_ingress_port_vlan(self.port2, False, 0, vlan_id)
+
         self.add_forwarding_unicast_v4_entry(self.S1U_ENB_IPV4, 32, 1)
         self.add_forwarding_unicast_v4_entry(self.END_POINT_IPV4, 32, 2)
         self.add_next_hop_L3(1, self.port2, self.SWITCH_MAC_2, self.DMAC_2)
         self.add_next_hop_L3(2, self.port1, self.SWITCH_MAC_1, self.DMAC_1)
+
+        self.set_egress_vlan_pop(self.port1, vlan_id)
+        self.set_egress_vlan_pop(self.port2, vlan_id)
 
         req = p4runtime_pb2.WriteRequest()
         req.device_id = self.device_id
@@ -717,6 +724,8 @@ class SpgwMPLSTest(SpgwTest):
         self.add_next_hop_L3(1, self.port2, self.SWITCH_MAC_2, self.DMAC_2)
         self.add_next_hop_mpls_v4(2, self.port1, self.SWITCH_MAC_1, self.DMAC_1,
                                   self.mpls_label)
+        self.set_egress_vlan_pop(self.port1, 20)
+        self.set_egress_vlan_pop(self.port2, 4094)
 
         req = p4runtime_pb2.WriteRequest()
         req.device_id = self.device_id
