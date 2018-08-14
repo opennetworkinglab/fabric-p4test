@@ -7,7 +7,7 @@ all: fabric fabric-spgw
 
 fabric:
 ifndef TEST
-	$(eval TEST = "all ^spgw")
+	$(eval TEST = all ^spgw)
 endif
 	${PTF_BMV2_CMD} \
 		--p4info ${FABRIC_OUT}/p4info.txt \
@@ -16,7 +16,7 @@ endif
 
 fabric-spgw:
 ifndef TEST
-	$(eval TEST = "all")
+	$(eval TEST = all)
 endif
 	${PTF_BMV2_CMD} \
 		--p4info ${FABRIC_SPGW_OUT}/p4info.txt \
