@@ -470,6 +470,64 @@ class FabricIPv4UnicastGroupTest(FabricTest):
             self, [exp_pkt_to2, exp_pkt_to3], [self.port2, self.port3])
 
 
+class FabricIPv4UnicastGroupTestAllPort(FabricTest):
+    @autocleanup
+    def runTest(self):
+        vlan_id = 10
+        out_port = ["port2", "port3", "port4"]
+        self.set_ingress_port_vlan(self.port1, False, 0, vlan_id)
+        self.set_forwarding_type(self.port1, SWITCH_MAC, 0x800,
+                                 FORWARDING_TYPE_UNICAST_IPV4)
+        self.add_forwarding_unicast_v4_entry(HOST2_IPV4, 24, 300)
+        grp_id = 66
+        mbrs = {
+            2: (self.port2, SWITCH_MAC, HOST2_MAC),
+            3: (self.port3, SWITCH_MAC, HOST3_MAC),
+        }
+        self.add_next_hop_L3_group(300, grp_id, mbrs)
+        self.set_egress_vlan_pop(self.port2, vlan_id)
+        self.set_egress_vlan_pop(self.port3, vlan_id)
+        # tcpsport_toport list is used to learn the tcp_source_port that causes the packet
+        # to be forwarded for each port
+        tcpsport_toport = [None, None]
+        for i in range(50):
+            test_tcp_sport = 1230 + i
+            pkt_from1 = testutils.simple_tcp_packet(
+                eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
+                ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4, ip_ttl=64, tcp_sport=test_tcp_sport)
+            exp_pkt_to2 = testutils.simple_tcp_packet(
+                eth_src=SWITCH_MAC, eth_dst=HOST2_MAC,
+                ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4, ip_ttl=63, tcp_sport=test_tcp_sport)
+            exp_pkt_to3 = testutils.simple_tcp_packet(
+                eth_src=SWITCH_MAC, eth_dst=HOST3_MAC,
+                ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4, ip_ttl=63, tcp_sport=test_tcp_sport)
+            testutils.send_packet(self, self.port1, str(pkt_from1))
+            out_port_indx = testutils.verify_any_packet_any_port(
+                self, [exp_pkt_to2, exp_pkt_to3], [self.port2, self.port3])
+            tcpsport_toport[out_port_indx] = test_tcp_sport
+
+        pkt_toport2 = testutils.simple_tcp_packet(
+            eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
+            ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4, ip_ttl=64, tcp_sport=tcpsport_toport[0])
+        pkt_toport3 = testutils.simple_tcp_packet(
+            eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
+            ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4, ip_ttl=64, tcp_sport=tcpsport_toport[1])
+        exp_pkt_to2 = testutils.simple_tcp_packet(
+            eth_src=SWITCH_MAC, eth_dst=HOST2_MAC,
+            ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4, ip_ttl=63, tcp_sport=tcpsport_toport[0])
+        exp_pkt_to3 = testutils.simple_tcp_packet(
+            eth_src=SWITCH_MAC, eth_dst=HOST3_MAC,
+            ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4, ip_ttl=63, tcp_sport=tcpsport_toport[1])
+        testutils.send_packet(self, self.port1, str(pkt_toport2))
+        testutils.send_packet(self, self.port1, str(pkt_toport3))
+        # In this assertion we are verifying:
+        #  1) all ports of the same group are used almost once
+        #  2) consistency of the forwarding decision, i.e. packets with the same 5-tuple
+        #     fields are always forwarded out of the same port
+        testutils.verify_each_packet_on_each_port(
+            self, [exp_pkt_to2, exp_pkt_to3], [self.port2, self.port3])
+
+
 class FabricIPv4MPLSTest(FabricTest):
     @autocleanup
     def runTest(self):
