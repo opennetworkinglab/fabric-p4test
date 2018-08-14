@@ -653,13 +653,8 @@ class SpgwSimpleTest(SpgwTest):
         end_point_ipv4_ = ipv4_to_binary(self.END_POINT_IPV4)
         self.push_update_add_entry_to_action(
             req,
-            "spgw_ingress.ue_filter_table",
-            [self.Lpm("ipv4.dst_addr", end_point_ipv4_, 32)],
-            "NoAction", [])
-        self.push_update_add_entry_to_action(
-            req,
             "spgw_ingress.s1u_filter_table",
-            [self.Exact("spgw_meta.s1u_sgw_addr", s1u_sgw_ipv4_)],
+            [self.Exact("gtpu_ipv4.dst_addr", s1u_sgw_ipv4_)],
             "NoAction", [])
         self.push_update_add_entry_to_action(
             req,
@@ -734,13 +729,8 @@ class SpgwMPLSTest(SpgwTest):
         end_point_ipv4_ = ipv4_to_binary(self.END_POINT_IPV4)
         self.push_update_add_entry_to_action(
             req,
-            "spgw_ingress.ue_filter_table",
-            [self.Lpm("ipv4.dst_addr", end_point_ipv4_, 32)],
-            "NoAction", [])
-        self.push_update_add_entry_to_action(
-            req,
             "spgw_ingress.s1u_filter_table",
-            [self.Exact("spgw_meta.s1u_sgw_addr", s1u_sgw_ipv4_)],
+            [self.Exact("gtpu_ipv4.dst_addr", s1u_sgw_ipv4_)],
             "NoAction", [])
         self.push_update_add_entry_to_action(
             req,
