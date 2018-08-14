@@ -44,6 +44,7 @@ DEFAULT_PRIORITY = 10
 FORWARDING_TYPE_BRIDGING = 0
 FORWARDING_TYPE_UNICAST_IPV4 = 2
 DEFAULT_MPLS_TTL = 64
+MIN_PKT_LEN = 80
 
 SWITCH_MAC = "00:00:00:00:aa:01"
 HOST1_MAC = "00:00:00:00:00:01"
@@ -51,6 +52,12 @@ HOST2_MAC = "00:00:00:00:00:02"
 HOST3_MAC = "00:00:00:00:00:03"
 HOST1_IPV4 = "10.0.1.1"
 HOST2_IPV4 = "10.0.2.1"
+HOST3_IPV4 = "10.0.3.1"
+HOST4_IPV4 = "10.0.4.1"
+S1U_ENB_IPV4 = "119.0.0.10"
+S1U_SGW_IPV4 = "140.0.0.2"
+UE_IPV4 = "16.255.255.252"
+UDP_GTP_PORT = 2152
 
 ETH_TYPE_ARP = 0x0806
 ETH_TYPE_IPV4 = 0x0800
@@ -341,9 +348,9 @@ class ArpBroadcastTest(FabricTest):
         next_id = vlan_id
         mcast_group_id = vlan_id
         all_ports = tagged_ports + untagged_ports
-        arp_pkt = testutils.simple_arp_packet(pktlen=76)
+        arp_pkt = testutils.simple_arp_packet(pktlen=MIN_PKT_LEN - 4)
         # Account for VLAN header size in total pktlen
-        vlan_arp_pkt = testutils.simple_arp_packet(vlan_vid=vlan_id, pktlen=80)
+        vlan_arp_pkt = testutils.simple_arp_packet(vlan_vid=vlan_id, pktlen=MIN_PKT_LEN)
         for port in tagged_ports:
             self.set_ingress_port_vlan(port, True, vlan_id, vlan_id)
         for port in untagged_ports:
@@ -400,42 +407,92 @@ class FabricArpBroadcastMixedTest(ArpBroadcastTest):
             untagged_ports=[self.port1])
 
 
-class FabricIPv4UnicastTest(FabricTest):
-    @autocleanup
-    def runTest(self):
+class IPv4UnicastTest(FabricTest):
+    def runIPv4UnicastTest(self, pkt, dst_mac):
         vlan_id = 10
+        if IP not in pkt or Ether not in pkt:
+            self.fail("Cannot to IPv4 test with packet that is not IP")
+        src_ipv4 = pkt[IP].src
+        dst_ipv4 = pkt[IP].dst
+        src_mac = pkt[Ether].src
+        switch_mac = pkt[Ether].dst
         self.set_ingress_port_vlan(self.port1, False, 0, vlan_id)
         self.set_ingress_port_vlan(self.port2, False, 0, vlan_id)
-        self.set_forwarding_type(self.port1, SWITCH_MAC, 0x800,
+        self.set_forwarding_type(self.port1, switch_mac, 0x800,
                                  FORWARDING_TYPE_UNICAST_IPV4)
-        self.set_forwarding_type(self.port2, SWITCH_MAC, 0x800,
+        self.set_forwarding_type(self.port2, switch_mac, 0x800,
                                  FORWARDING_TYPE_UNICAST_IPV4)
-        self.add_forwarding_unicast_v4_entry(HOST1_IPV4, 24, 100)
-        self.add_forwarding_unicast_v4_entry(HOST2_IPV4, 24, 200)
-        self.add_next_hop_L3(100, self.port1, SWITCH_MAC, HOST1_MAC)
-        self.add_next_hop_L3(200, self.port2, SWITCH_MAC, HOST2_MAC)
+        self.add_forwarding_unicast_v4_entry(src_ipv4, 24, 100)
+        self.add_forwarding_unicast_v4_entry(dst_ipv4, 24, 200)
+        self.add_next_hop_L3(100, self.port1, switch_mac, src_mac)
+        self.add_next_hop_L3(200, self.port2, switch_mac, dst_mac)
         self.set_egress_vlan_pop(self.port1, vlan_id)
         self.set_egress_vlan_pop(self.port2, vlan_id)
 
-        pkt_1to2 = testutils.simple_tcp_packet(
+        exp_pkt = pkt.copy()
+        exp_pkt[Ether].src = switch_mac
+        exp_pkt[Ether].dst = dst_mac
+        exp_pkt[IP].ttl = exp_pkt[IP].ttl - 1
+
+        testutils.send_packet(self, self.port1, str(pkt))
+        testutils.verify_packets(self, exp_pkt, [self.port2])
+
+        pkt2 = pkt.copy()
+        pkt2[Ether].src = dst_mac
+        pkt2[IP].src = dst_ipv4
+        pkt2[IP].dst = src_ipv4
+
+        exp_pkt2 = pkt2.copy()
+        exp_pkt2[Ether].src = switch_mac
+        exp_pkt2[Ether].dst = src_mac
+        exp_pkt2[IP].ttl = exp_pkt2[IP].ttl - 1
+
+        testutils.send_packet(self, self.port2, str(pkt2))
+        testutils.verify_packets(self, exp_pkt2, [self.port1])
+
+
+class FabricIPv4UnicastTcpTest(IPv4UnicastTest):
+    @autocleanup
+    def runTest(self):
+        pkt = testutils.simple_tcp_packet(
             eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
-            ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4, ip_ttl=64)
-        exp_pkt_1to2 = testutils.simple_tcp_packet(
-            eth_src=SWITCH_MAC, eth_dst=HOST2_MAC,
-            ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4, ip_ttl=63)
+            ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4)
+        self.runIPv4UnicastTest(pkt, HOST2_MAC)
 
-        testutils.send_packet(self, self.port1, str(pkt_1to2))
-        testutils.verify_packets(self, exp_pkt_1to2, [self.port2])
 
-        pkt_2to1 = testutils.simple_tcp_packet(
-            eth_src=HOST2_MAC, eth_dst=SWITCH_MAC,
-            ip_src=HOST2_IPV4, ip_dst=HOST1_IPV4, ip_ttl=64)
-        exp_pkt_2to1 = testutils.simple_tcp_packet(
-            eth_src=SWITCH_MAC, eth_dst=HOST1_MAC,
-            ip_src=HOST2_IPV4, ip_dst=HOST1_IPV4, ip_ttl=63)
+class FabricIPv4UnicastUdpTest(IPv4UnicastTest):
+    @autocleanup
+    def runTest(self):
+        pkt = testutils.simple_udp_packet(
+            eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
+            ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4)
+        self.runIPv4UnicastTest(pkt, HOST2_MAC)
 
-        testutils.send_packet(self, self.port2, str(pkt_2to1))
-        testutils.verify_packets(self, exp_pkt_2to1, [self.port1])
+
+class FabricIPv4UnicastIcmpTest(IPv4UnicastTest):
+    @autocleanup
+    def runTest(self):
+        pkt = testutils.simple_icmp_packet(
+            eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
+            ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4, pktlen=MIN_PKT_LEN)
+        self.runIPv4UnicastTest(pkt, HOST2_MAC)
+
+
+class FabricIPv4UnicastGtpTest(IPv4UnicastTest):
+    @autocleanup
+    def runTest(self):
+        # Assert that GTP packets not meant to be processed by spgw.p4 are
+        # forwarded using the outer IP+UDP headers. For spgw.p4 to kick in
+        # outer IP dst should be in a subnet defined at compile time (see
+        # fabric.p4's parser).
+        inner_udp = UDP(sport=5061, dport=5060) / ("\xab" * 128)
+        pkt = Ether(src=HOST1_MAC, dst=SWITCH_MAC) / \
+              IP(src=HOST3_IPV4, dst=HOST4_IPV4) / \
+              UDP(sport=UDP_GTP_PORT, dport=UDP_GTP_PORT) / \
+              make_gtp(20 + len(inner_udp), 0xeeffc0f0) / \
+              IP(src=HOST1_IPV4, dst=HOST2_IPV4) / \
+              inner_udp
+        self.runIPv4UnicastTest(pkt, HOST2_MAC)
 
 
 class FabricIPv4UnicastGroupTest(FabricTest):
@@ -606,7 +663,7 @@ class PacketOutTest(FabricTest):
 class FabricArpPacketOutTest(PacketOutTest):
     @autocleanup
     def runTest(self):
-        pkt = testutils.simple_arp_packet(pktlen=80)
+        pkt = testutils.simple_arp_packet(pktlen=MIN_PKT_LEN)
         self.runPacketOutTest(pkt)
 
 
@@ -614,7 +671,7 @@ class FabricArpPacketOutTest(PacketOutTest):
 class FabricShortIpPacketOutTest(PacketOutTest):
     @autocleanup
     def runTest(self):
-        pkt = testutils.simple_ip_packet(pktlen=80)
+        pkt = testutils.simple_ip_packet(pktlen=MIN_PKT_LEN)
         self.runPacketOutTest(pkt)
 
 
@@ -643,7 +700,7 @@ class PacketInTest(FabricTest):
 class FabricArpPacketInTest(PacketInTest):
     @autocleanup
     def runTest(self):
-        pkt = testutils.simple_arp_packet(pktlen=80)
+        pkt = testutils.simple_arp_packet(pktlen=MIN_PKT_LEN)
         self.runPacketInTest(pkt, ETH_TYPE_ARP)
 
 
@@ -659,7 +716,7 @@ class FabricLongIpPacketInTest(PacketInTest):
 class FabricShortIpPacketInTest(PacketInTest):
     @autocleanup
     def runTest(self):
-        pkt = testutils.simple_ip_packet(pktlen=80)
+        pkt = testutils.simple_ip_packet(pktlen=MIN_PKT_LEN)
         self.runPacketInTest(pkt, ETH_TYPE_IPV4)
 
 
@@ -674,9 +731,6 @@ class FabricTaggedPacketInTest(PacketInTest):
 class SpgwTest(FabricTest):
     def setUp(self):
         super(SpgwTest, self).setUp()
-        self.S1U_ENB_IPV4 = "192.168.102.11"
-        self.S1U_SGW_IPV4 = "192.168.102.13"
-        self.END_POINT_IPV4 = "16.255.255.252"
         self.SWITCH_MAC_1 = "c2:42:59:2d:3a:84"
         self.SWITCH_MAC_2 = "3a:c1:e2:53:e1:50"
         self.DMAC_1 = "52:54:00:05:7b:59"
@@ -692,25 +746,27 @@ class SpgwSimpleTest(SpgwTest):
     def setUp(self):
         super(SpgwSimpleTest, self).setUp()
 
-        self.add_forwarding_unicast_v4_entry(self.S1U_ENB_IPV4, 32, 1)
-        self.add_forwarding_unicast_v4_entry(self.END_POINT_IPV4, 32, 2)
+        vlan_id = 10
+        self.set_ingress_port_vlan(self.port1, False, 0, vlan_id)
+        self.set_ingress_port_vlan(self.port2, False, 0, vlan_id)
+
+        self.add_forwarding_unicast_v4_entry(S1U_ENB_IPV4, 32, 1)
+        self.add_forwarding_unicast_v4_entry(UE_IPV4, 32, 2)
         self.add_next_hop_L3(1, self.port2, self.SWITCH_MAC_2, self.DMAC_2)
         self.add_next_hop_L3(2, self.port1, self.SWITCH_MAC_1, self.DMAC_1)
 
+        self.set_egress_vlan_pop(self.port1, vlan_id)
+        self.set_egress_vlan_pop(self.port2, vlan_id)
+
         req = p4runtime_pb2.WriteRequest()
         req.device_id = self.device_id
-        s1u_enb_ipv4_ = ipv4_to_binary(self.S1U_ENB_IPV4)
-        s1u_sgw_ipv4_ = ipv4_to_binary(self.S1U_SGW_IPV4)
-        end_point_ipv4_ = ipv4_to_binary(self.END_POINT_IPV4)
-        self.push_update_add_entry_to_action(
-            req,
-            "spgw_ingress.ue_filter_table",
-            [self.Lpm("ipv4.dst_addr", end_point_ipv4_, 32)],
-            "NoAction", [])
+        s1u_enb_ipv4_ = ipv4_to_binary(S1U_ENB_IPV4)
+        s1u_sgw_ipv4_ = ipv4_to_binary(S1U_SGW_IPV4)
+        end_point_ipv4_ = ipv4_to_binary(UE_IPV4)
         self.push_update_add_entry_to_action(
             req,
             "spgw_ingress.s1u_filter_table",
-            [self.Exact("spgw_meta.s1u_sgw_addr", s1u_sgw_ipv4_)],
+            [self.Exact("gtpu_ipv4.dst_addr", s1u_sgw_ipv4_)],
             "NoAction", [])
         self.push_update_add_entry_to_action(
             req,
@@ -728,14 +784,14 @@ class SpgwDownlinkTest(SpgwSimpleTest):
     def runTest(self):
         inner_udp = UDP(sport=5061, dport=5060) / ("\xab" * 128)
         pkt = Ether(src=self.DMAC_2, dst=self.SWITCH_MAC_2) / \
-              IP(src=self.S1U_ENB_IPV4, dst=self.END_POINT_IPV4) / \
+              IP(src=S1U_ENB_IPV4, dst=UE_IPV4) / \
               inner_udp
         exp_pkt = Ether(src=self.SWITCH_MAC_1, dst=self.DMAC_1) / \
                   IP(tos=0, id=0x1513, flags=0, frag=0,
-                     src=self.S1U_SGW_IPV4, dst=self.S1U_ENB_IPV4) / \
-                  UDP(sport=2152, dport=2152, chksum=0) / \
+                     src=S1U_SGW_IPV4, dst=S1U_ENB_IPV4) / \
+                  UDP(sport=UDP_GTP_PORT, dport=UDP_GTP_PORT, chksum=0) / \
                   make_gtp(20 + len(inner_udp), 1) / \
-                  IP(src=self.S1U_ENB_IPV4, dst=self.END_POINT_IPV4, ttl=63) / \
+                  IP(src=S1U_ENB_IPV4, dst=UE_IPV4, ttl=63) / \
                   inner_udp
         testutils.send_packet(self, self.port2, str(pkt))
         testutils.verify_packet(self, exp_pkt, self.port1)
@@ -747,13 +803,13 @@ class SpgwUplinkTest(SpgwSimpleTest):
     def runTest(self):
         inner_udp = UDP(sport=5060, dport=5061) / ("\xab" * 128)
         pkt = Ether(src=self.DMAC_1, dst=self.SWITCH_MAC_1) / \
-              IP(src=self.S1U_ENB_IPV4, dst=self.S1U_SGW_IPV4) / \
-              UDP(sport=2152, dport=2152) / \
+              IP(src=S1U_ENB_IPV4, dst=S1U_SGW_IPV4) / \
+              UDP(sport=UDP_GTP_PORT, dport=UDP_GTP_PORT) / \
               make_gtp(20 + len(inner_udp), 0xeeffc0f0) / \
-              IP(src=self.END_POINT_IPV4, dst=self.S1U_ENB_IPV4) / \
+              IP(src=UE_IPV4, dst=S1U_ENB_IPV4) / \
               inner_udp
         exp_pkt = Ether(src=self.SWITCH_MAC_2, dst=self.DMAC_2) / \
-                  IP(src=self.END_POINT_IPV4, dst=self.S1U_ENB_IPV4, ttl=63) / \
+                  IP(src=UE_IPV4, dst=S1U_ENB_IPV4, ttl=63) / \
                   inner_udp
         testutils.send_packet(self, self.port1, str(pkt))
         testutils.verify_packet(self, exp_pkt, self.port2)
@@ -770,26 +826,23 @@ class SpgwMPLSTest(SpgwTest):
                                    vlan_id=0, new_vlan_id=4094)
         self.set_ingress_port_vlan(self.port2, vlan_valid=False,
                                    vlan_id=0, new_vlan_id=20)
-        self.add_forwarding_unicast_v4_entry(self.S1U_ENB_IPV4, 32, 1)
-        self.add_forwarding_unicast_v4_entry(self.END_POINT_IPV4, 32, 2)
+        self.add_forwarding_unicast_v4_entry(S1U_ENB_IPV4, 32, 1)
+        self.add_forwarding_unicast_v4_entry(UE_IPV4, 32, 2)
         self.add_next_hop_L3(1, self.port2, self.SWITCH_MAC_2, self.DMAC_2)
         self.add_next_hop_mpls_v4(2, self.port1, self.SWITCH_MAC_1, self.DMAC_1,
                                   self.mpls_label)
+        self.set_egress_vlan_pop(self.port1, 20)
+        self.set_egress_vlan_pop(self.port2, 4094)
 
         req = p4runtime_pb2.WriteRequest()
         req.device_id = self.device_id
-        s1u_enb_ipv4_ = ipv4_to_binary(self.S1U_ENB_IPV4)
-        s1u_sgw_ipv4_ = ipv4_to_binary(self.S1U_SGW_IPV4)
-        end_point_ipv4_ = ipv4_to_binary(self.END_POINT_IPV4)
-        self.push_update_add_entry_to_action(
-            req,
-            "spgw_ingress.ue_filter_table",
-            [self.Lpm("ipv4.dst_addr", end_point_ipv4_, 32)],
-            "NoAction", [])
+        s1u_enb_ipv4_ = ipv4_to_binary(S1U_ENB_IPV4)
+        s1u_sgw_ipv4_ = ipv4_to_binary(S1U_SGW_IPV4)
+        end_point_ipv4_ = ipv4_to_binary(UE_IPV4)
         self.push_update_add_entry_to_action(
             req,
             "spgw_ingress.s1u_filter_table",
-            [self.Exact("spgw_meta.s1u_sgw_addr", s1u_sgw_ipv4_)],
+            [self.Exact("gtpu_ipv4.dst_addr", s1u_sgw_ipv4_)],
             "NoAction", [])
         self.push_update_add_entry_to_action(
             req,
@@ -807,15 +860,15 @@ class SpgwDownlinkMPLSTest(SpgwMPLSTest):
     def runTest(self):
         inner_udp = UDP(sport=5061, dport=5060) / ("\xab" * 128)
         pkt = Ether(src=self.DMAC_2, dst=self.SWITCH_MAC_2) / \
-              IP(src=self.S1U_ENB_IPV4, dst=self.END_POINT_IPV4) / \
+              IP(src=S1U_ENB_IPV4, dst=UE_IPV4) / \
               inner_udp
         exp_pkt = Ether(src=self.SWITCH_MAC_1, dst=self.DMAC_1) / \
                   MPLS(label=self.mpls_label, cos=0, s=1, ttl=64) / \
                   IP(tos=0, id=0x1513, flags=0, frag=0,
-                     src=self.S1U_SGW_IPV4, dst=self.S1U_ENB_IPV4) / \
-                  UDP(sport=2152, dport=2152, chksum=0) / \
+                     src=S1U_SGW_IPV4, dst=S1U_ENB_IPV4) / \
+                  UDP(sport=UDP_GTP_PORT, dport=UDP_GTP_PORT, chksum=0) / \
                   make_gtp(20 + len(inner_udp), 1) / \
-                  IP(src=self.S1U_ENB_IPV4, dst=self.END_POINT_IPV4, ttl=64) / \
+                  IP(src=S1U_ENB_IPV4, dst=UE_IPV4, ttl=64) / \
                   inner_udp
         testutils.send_packet(self, self.port2, str(pkt))
         testutils.verify_packet(self, exp_pkt, self.port1)
@@ -845,7 +898,7 @@ class SpgwDownlinkMPLS_INT_Test(SpgwMPLSTest):
         inner_udp = UDP(sport=5061, dport=dport, chksum=0)
         # IP tos is 0x04 to enable INT
         pkt = Ether(src=self.DMAC_2, dst=self.SWITCH_MAC_2) / \
-              IP(tos=0x04, src=self.S1U_ENB_IPV4, dst=self.END_POINT_IPV4) / \
+              IP(tos=0x04, src=S1U_ENB_IPV4, dst=UE_IPV4) / \
               inner_udp / \
               int_shim / int_header / int_tail / \
               payload
@@ -868,10 +921,10 @@ class SpgwDownlinkMPLS_INT_Test(SpgwMPLSTest):
         exp_pkt = Ether(src=self.SWITCH_MAC_1, dst=self.DMAC_1) / \
                   MPLS(label=self.mpls_label, cos=0, s=1, ttl=64) / \
                   IP(tos=0, id=0x1513, flags=0, frag=0,
-                     src=self.S1U_SGW_IPV4, dst=self.S1U_ENB_IPV4) / \
-                  UDP(sport=2152, dport=2152, chksum=0) / \
+                     src=S1U_SGW_IPV4, dst=S1U_ENB_IPV4) / \
+                  UDP(sport=UDP_GTP_PORT, dport=UDP_GTP_PORT, chksum=0) / \
                   make_gtp(20 + len(inner_udp) + len(exp_int) + len(payload), 1) / \
-                  IP(tos=0x04, src=self.S1U_ENB_IPV4, dst=self.END_POINT_IPV4, ttl=64) / \
+                  IP(tos=0x04, src=S1U_ENB_IPV4, dst=UE_IPV4, ttl=64) / \
                   inner_udp / \
                   exp_int / \
                   payload
