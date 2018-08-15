@@ -763,6 +763,37 @@ class FabricIPv4UnicastGroupTestAllPortIpDst(FabricTest):
             self, [exp_pkt_to2, exp_pkt_to3], [self.port2, self.port3])
 
 
+class FabricIPv4UDPGroupTest(FabricTest):
+    @autocleanup
+    def runTest(self):
+        # In this test we check that a UDP packet is forwarded to one of the group's port
+        vlan_id = 10
+        self.set_ingress_port_vlan(self.port1, False, 0, vlan_id)
+        self.set_forwarding_type(self.port1, SWITCH_MAC, 0x800,
+                                 FORWARDING_TYPE_UNICAST_IPV4)
+        self.add_forwarding_unicast_v4_entry(HOST2_IPV4, 24, 300)
+        grp_id = 66
+        mbrs = {
+            2: (self.port2, SWITCH_MAC, HOST2_MAC),
+            3: (self.port3, SWITCH_MAC, HOST3_MAC),
+        }
+        self.add_next_hop_L3_group(300, grp_id, mbrs)
+        self.set_egress_vlan_pop(self.port2, vlan_id)
+        self.set_egress_vlan_pop(self.port3, vlan_id)
+        pkt_from1 = testutils.simple_udp_packet(
+            eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
+            ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4, ip_ttl=64)
+        exp_pkt_to2 = testutils.simple_udp_packet(
+            eth_src=SWITCH_MAC, eth_dst=HOST2_MAC,
+            ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4, ip_ttl=63)
+        exp_pkt_to3 = testutils.simple_udp_packet(
+            eth_src=SWITCH_MAC, eth_dst=HOST3_MAC,
+            ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4, ip_ttl=63)
+        testutils.send_packet(self, self.port1, str(pkt_from1))
+        testutils.verify_any_packet_any_port(
+            self, [exp_pkt_to2, exp_pkt_to3], [self.port2, self.port3])
+
+
 class FabricIPv4MPLSTest(FabricTest):
     @autocleanup
     def runTest(self):
