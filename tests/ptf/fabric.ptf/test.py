@@ -527,11 +527,12 @@ class FabricIPv4UnicastGroupTest(FabricTest):
             self, [exp_pkt_to2, exp_pkt_to3], [self.port2, self.port3])
 
 
-class FabricIPv4UnicastGroupTestAllPort(FabricTest):
+class FabricIPv4UnicastGroupTestAllPortTcpSport(FabricTest):
     @autocleanup
     def runTest(self):
+        # In this test we check that packets are forwarded to all ports when we change
+        # one of the 5-tuple header values. In this case tcp-source-port
         vlan_id = 10
-        out_port = ["port2", "port3", "port4"]
         self.set_ingress_port_vlan(self.port1, False, 0, vlan_id)
         self.set_forwarding_type(self.port1, SWITCH_MAC, 0x800,
                                  FORWARDING_TYPE_UNICAST_IPV4)
@@ -588,6 +589,8 @@ class FabricIPv4UnicastGroupTestAllPort(FabricTest):
 class FabricIPv4UnicastGroupTestAllPortTcpDport(FabricTest):
     @autocleanup
     def runTest(self):
+        # In this test we check that packets are forwarded to all ports when we change
+        # one of the 5-tuple header values. In this case tcp-dst-port
         vlan_id = 10
         self.set_ingress_port_vlan(self.port1, False, 0, vlan_id)
         self.set_forwarding_type(self.port1, SWITCH_MAC, 0x800,
