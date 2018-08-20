@@ -16,18 +16,11 @@
 
 import unittest
 
-from ptf.mask import Mask
 from ptf.testutils import group
 from scapy.contrib.mpls import MPLS
-from scapy.layers.inet import UDP
 
-import xnt
 from base_test import autocleanup
 from fabric_test import *
-
-INT_META_HDR = xnt.INT_META_HDR
-INT_L45_HEAD = xnt.INT_L45_HEAD
-INT_L45_TAIL = xnt.INT_L45_TAIL
 
 vlan_confs = {
     "tagged": [True, True],
@@ -438,3 +431,57 @@ class SpgwDownlinkMPLS_INT_Test(SpgwMPLSTest):
 
         testutils.send_packet(self, self.port2, str(pkt))
         testutils.verify_packet(self, exp_pkt, self.port1)
+
+
+@group("int")
+class FabricIntSourceTest(IntTest):
+    @autocleanup
+    def doRunTest(self, **kwargs):
+        self.runIntSourceTest(**kwargs)
+
+    def runTest(self):
+        instr_sets = [
+            [INT_SWITCH_ID, INT_IG_EG_PORT],
+            [INT_SWITCH_ID, INT_IG_EG_PORT, INT_IG_TSTAMP, INT_EG_TSTAMP, INT_QUEUE_OCCUPANCY]
+        ]
+        print ""
+        for vlan_conf, tagged in vlan_confs.items():
+            for pkt_type in ["udp", "tcp"]:
+                for transit in [True, False]:
+                    for instructions in instr_sets:
+                        print "Testing VLAN=%s, pkt=%s, transit=%s, instructions=%s..." \
+                              % (vlan_conf, pkt_type, transit, ",".join([INT_INS_TO_NAME[i] for i in instructions]))
+                        pkt = getattr(testutils, "simple_%s_packet" % pkt_type)()
+                        self.doRunTest(pkt=pkt, instructions=instructions,
+                                       with_transit=transit, ignore_csum=True,
+                                       tagged1=tagged[0], tagged2=tagged[1])
+
+
+@group("int")
+class FabricIntTransitTest(IntTest):
+    @autocleanup
+    def doRunTest(self, **kwargs):
+        self.runIntTransitTest(**kwargs)
+
+    def runTest(self):
+        instr_sets = [
+            [INT_SWITCH_ID, INT_IG_EG_PORT],
+            [INT_SWITCH_ID, INT_IG_EG_PORT, INT_IG_TSTAMP, INT_EG_TSTAMP, INT_QUEUE_OCCUPANCY]
+        ]
+        print ""
+        for vlan_conf, tagged in vlan_confs.items():
+            for pkt_type in ["tcp", "udp"]:
+                for prev_hops in [0, 3]:
+                    for instructions in instr_sets:
+                        print "Testing VLAN=%s, pkt=%s, prev_hops=%s, instructions=%s..." \
+                              % (vlan_conf, pkt_type, prev_hops,
+                                 ",".join([INT_INS_TO_NAME[i] for i in instructions]))
+                        pkt = getattr(testutils, "simple_%s_packet" % pkt_type)()
+                        hop_metadata, _ = self.get_int_metadata(
+                            instructions, 0xCAFEBABE, 0xDEAD, 0xBEEF)
+                        int_pkt = self.get_int_pkt(
+                            pkt=pkt, instructions=instructions, max_hop=50,
+                            transit_hops=prev_hops, hop_metadata=hop_metadata)
+                        self.doRunTest(
+                            pkt=int_pkt, tagged1=tagged[0], tagged2=tagged[1],
+                            ignore_csum=1)
