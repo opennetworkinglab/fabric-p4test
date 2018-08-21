@@ -16,109 +16,39 @@
 
 import unittest
 
-import ptf.testutils as testutils
-from p4.v1 import p4runtime_pb2
 from ptf.mask import Mask
 from ptf.testutils import group
 from scapy.contrib.mpls import MPLS
-from scapy.layers.inet import IP, UDP, Ether
+from scapy.layers.inet import UDP
 
-# In case the "correct" version of scapy (from p4lang) is not installed, we
-# provide the INT header formats in xnt.py
-# import scapy.main
-# scapy.main.load_contrib("xnt")
-# INT_META_HDR = scapy.contrib.xnt.INT_META_HDR
-# INT_L45_HEAD = scapy.contrib.xnt.INT_L45_HEAD
-# INT_L45_TAIL = scapy.contrib.xnt.INT_L45_TAIL
 import xnt
 from base_test import autocleanup
-from base_test import stringify, ipv4_to_binary
-from fabric_test import FabricTest, MIN_PKT_LEN, ETH_TYPE_ARP, FORWARDING_TYPE_UNICAST_IPV4, UDP_GTP_PORT, \
-    DEFAULT_MPLS_TTL, ETH_TYPE_IPV4, DEFAULT_PRIORITY, ArpBroadcastTest, IPv4UnicastTest, PacketOutTest, PacketInTest, \
-    SpgwMPLSTest, SpgwSimpleTest, make_gtp
+from fabric_test import *
 
 INT_META_HDR = xnt.INT_META_HDR
 INT_L45_HEAD = xnt.INT_L45_HEAD
 INT_L45_TAIL = xnt.INT_L45_TAIL
 
-SWITCH_MAC = "00:00:00:00:aa:01"
-HOST1_MAC = "00:00:00:00:00:01"
-HOST2_MAC = "00:00:00:00:00:02"
-HOST3_MAC = "00:00:00:00:00:03"
-HOST1_IPV4 = "10.0.1.1"
-HOST2_IPV4 = "10.0.2.1"
-HOST3_IPV4 = "10.0.3.1"
-HOST4_IPV4 = "10.0.4.1"
-S1U_ENB_IPV4 = "119.0.0.10"
-S1U_SGW_IPV4 = "140.0.0.2"
-UE_IPV4 = "16.255.255.252"
+vlan_confs = {
+    "tagged": [True, True],
+    "untagged": [False, False],
+    "mixed": [True, False],
+}
 
 
-class FabricL2UnicastTest(FabricTest):
+class FabricBridgingTest(BridgingTest):
     @autocleanup
+    def doRunTest(self, tagged1, tagged2, pkt):
+        self.runBridgingTest(tagged1, tagged2, pkt)
+
     def runTest(self):
-        mac_addr_mask = ":".join(["ff"] * 6)
-        vlan_id = 10
-        self.set_ingress_port_vlan(self.port1, False, 0, vlan_id)
-        self.set_ingress_port_vlan(self.port2, False, 0, vlan_id)
-        # miss on filtering.fwd_classifier => bridging
-        self.add_bridging_entry(vlan_id, HOST1_MAC, mac_addr_mask, 10)
-        self.add_bridging_entry(vlan_id, HOST2_MAC, mac_addr_mask, 20)
-        self.add_next_hop(10, self.port1)
-        self.add_next_hop(20, self.port2)
-        self.set_egress_vlan_pop(self.port1, vlan_id)
-        self.set_egress_vlan_pop(self.port2, vlan_id)
-
-        pkt_1to2 = testutils.simple_tcp_packet(
-            eth_src=HOST1_MAC, eth_dst=HOST2_MAC, ip_ttl=64)
-        exp_pkt_1to2 = testutils.simple_tcp_packet(
-            eth_src=HOST1_MAC, eth_dst=HOST2_MAC, ip_ttl=63)
-
-        testutils.send_packet(self, self.port1, str(pkt_1to2))
-        testutils.verify_packets(self, exp_pkt_1to2, [self.port2])
-
-        pkt_2to1 = testutils.simple_tcp_packet(
-            eth_src=HOST2_MAC, eth_dst=HOST1_MAC, ip_ttl=64)
-        exp_pkt_2to1 = testutils.simple_tcp_packet(
-            eth_src=HOST2_MAC, eth_dst=HOST1_MAC, ip_ttl=63)
-
-        testutils.send_packet(self, self.port2, str(pkt_2to1))
-        testutils.verify_packets(self, exp_pkt_2to1, [self.port1])
-
-
-class FabricL2UnicastVlanTest(FabricTest):
-    @autocleanup
-    def runTest(self):
-        mac_addr_mask = ":".join(["ff"] * 6)
-        vlan_id = 10
-        # set internal VLAN for port 2 only since packet from port 1 is tagged
-        self.set_ingress_port_vlan(self.port2, False, 0, vlan_id)
-        # miss on filtering.fwd_classifier => bridging
-        self.add_bridging_entry(vlan_id, HOST1_MAC, mac_addr_mask, 10)
-        self.add_bridging_entry(vlan_id, HOST2_MAC, mac_addr_mask, 20)
-        self.add_next_hop(10, self.port1)
-        self.add_next_hop(20, self.port2)
-        # pops VLAN on port 2 since port 2 is an untagged port
-        self.set_egress_vlan_pop(self.port2, vlan_id)
-
-        pkt_1to2 = testutils.simple_tcp_packet(
-            eth_src=HOST1_MAC, eth_dst=HOST2_MAC, dl_vlan_enable=True,
-            vlan_vid=vlan_id, ip_ttl=64)
-        exp_pkt_1to2 = testutils.simple_tcp_packet(
-            eth_src=HOST1_MAC, eth_dst=HOST2_MAC,
-            ip_ttl=63, pktlen=96)  # packet length will decrease
-
-        testutils.send_packet(self, self.port1, str(pkt_1to2))
-        testutils.verify_packets(self, exp_pkt_1to2, [self.port2])
-
-        pkt_2to1 = testutils.simple_tcp_packet(
-            eth_src=HOST2_MAC, eth_dst=HOST1_MAC, ip_ttl=64)
-        exp_pkt_2to1 = testutils.simple_tcp_packet(
-            eth_src=HOST2_MAC, eth_dst=HOST1_MAC, dl_vlan_enable=True,
-            vlan_vid=vlan_id, ip_ttl=63, pktlen=104)  # packet length will increase
-
-        testutils.send_packet(self, self.port2, str(pkt_2to1))
-        testutils.verify_packets(self, exp_pkt_2to1, [self.port1])
+        print ""
+        for vlan_conf, tagged in vlan_confs.items():
+            for pkt_type in ["tcp", "udp", "icmp"]:
+                print "Testing %s packet with VLAN %s.." % (pkt_type, vlan_conf)
+                pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
+                    pktlen=120)
+                self.doRunTest(tagged[0], tagged[1], pkt)
 
 
 @group("multicast")
@@ -148,31 +78,24 @@ class FabricArpBroadcastMixedTest(ArpBroadcastTest):
             untagged_ports=[self.port1])
 
 
-class FabricIPv4UnicastTcpTest(IPv4UnicastTest):
+class FabricIPv4UnicastTest(IPv4UnicastTest):
     @autocleanup
+    def doRunTest(self, pkt, mac_dest, tagged1, tagged2):
+        self.runIPv4UnicastTest(
+            pkt, mac_dest, prefix_len=24, tagged1=tagged1, tagged2=tagged2)
+
     def runTest(self):
-        pkt = testutils.simple_tcp_packet(
-            eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
-            ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4)
-        self.runIPv4UnicastTest(pkt, HOST2_MAC)
-
-
-class FabricIPv4UnicastUdpTest(IPv4UnicastTest):
-    @autocleanup
-    def runTest(self):
-        pkt = testutils.simple_udp_packet(
-            eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
-            ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4)
-        self.runIPv4UnicastTest(pkt, HOST2_MAC)
-
-
-class FabricIPv4UnicastIcmpTest(IPv4UnicastTest):
-    @autocleanup
-    def runTest(self):
-        pkt = testutils.simple_icmp_packet(
-            eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
-            ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4, pktlen=MIN_PKT_LEN)
-        self.runIPv4UnicastTest(pkt, HOST2_MAC)
+        print ""
+        for vlan_conf, tagged in vlan_confs.items():
+            for pkt_type in ["tcp", "udp", "icmp"]:
+                print "Testing %s packet with VLAN %s..." \
+                      % (pkt_type, vlan_conf)
+                pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
+                    eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
+                    ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4,
+                    pktlen=MIN_PKT_LEN
+                )
+                self.doRunTest(pkt, HOST2_MAC, tagged[0], tagged[1])
 
 
 class FabricIPv4UnicastGtpTest(IPv4UnicastTest):

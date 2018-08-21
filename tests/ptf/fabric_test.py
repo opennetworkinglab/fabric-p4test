@@ -18,7 +18,7 @@ import struct
 from p4.v1 import p4runtime_pb2
 from ptf import testutils as testutils
 from scapy.layers.inet import IP
-from scapy.layers.l2 import Ether
+from scapy.layers.l2 import Ether, Dot1Q
 
 from base_test import P4RuntimeTest, stringify, mac_to_binary, ipv4_to_binary
 
@@ -34,6 +34,52 @@ UDP_GTP_PORT = 2152
 
 ETH_TYPE_ARP = 0x0806
 ETH_TYPE_IPV4 = 0x0800
+
+MAC_MASK = ":".join(["ff"] * 6)
+SWITCH_MAC = "00:00:00:00:aa:01"
+HOST1_MAC = "00:00:00:00:00:01"
+HOST2_MAC = "00:00:00:00:00:02"
+HOST3_MAC = "00:00:00:00:00:03"
+HOST1_IPV4 = "10.0.1.1"
+HOST2_IPV4 = "10.0.2.1"
+HOST3_IPV4 = "10.0.3.1"
+HOST4_IPV4 = "10.0.4.1"
+S1U_ENB_IPV4 = "119.0.0.10"
+S1U_SGW_IPV4 = "140.0.0.2"
+UE_IPV4 = "16.255.255.252"
+
+VLAN_ID_1 = 100
+VLAN_ID_2 = 200
+
+
+def make_gtp(msg_len, teid, flags=0x30, msg_type=0xff):
+    """Convenience function since GTP header has no scapy support"""
+    return struct.pack(">BBHL", flags, msg_type, msg_len, teid)
+
+
+def pkt_mac_swap(pkt):
+    orig_dst = pkt[Ether].dst
+    pkt[Ether].dst = pkt[Ether].src
+    pkt[Ether].src = orig_dst
+    return pkt
+
+
+def pkt_route(pkt, mac_dst):
+    pkt[Ether].src = pkt[Ether].dst
+    pkt[Ether].dst = mac_dst
+    return pkt
+
+
+def pkt_add_vlan(pkt, vlan_vid=10, vlan_pcp=0, dl_vlan_cfi=0):
+    return Ether(src=pkt[Ether].src, dst=pkt[Ether].dst) / \
+           Dot1Q(prio=vlan_pcp, id=dl_vlan_cfi, vlan=vlan_vid) / \
+           pkt[Ether].payload
+
+
+def pkt_decrement_ttl(pkt):
+    if IP in pkt:
+        pkt[IP].ttl -= 1
+    return pkt
 
 
 class FabricTest(P4RuntimeTest):
@@ -71,6 +117,15 @@ class FabricTest(P4RuntimeTest):
                 "int_metadata_insert.int_inst_0407", [mf],
                 action, [])
         self.write_request(req)
+
+    def setup_port(self, port_id, vlan_id, tagged=False):
+        if tagged:
+            self.set_ingress_port_vlan(ingress_port=port_id, vlan_id=vlan_id,
+                                       vlan_valid=tagged, new_vlan_id=vlan_id)
+        else:
+            self.set_ingress_port_vlan(ingress_port=port_id, vlan_id=0,
+                                       vlan_valid=False, new_vlan_id=vlan_id)
+            self.set_egress_vlan_pop(egress_port=port_id, vlan_id=vlan_id)
 
     def set_ingress_port_vlan(self, ingress_port, vlan_valid=False,
                               vlan_id=0,
@@ -171,6 +226,15 @@ class FabricTest(P4RuntimeTest):
             "next.l3_routing_simple",
             [("port_num", egress_port_), ("smac", smac_), ("dmac", dmac_)])
 
+    def add_vlan_meta(self, next_id, new_vlan_id):
+        next_id_ = stringify(next_id, 4)
+        vlan_id_ = stringify(new_vlan_id, 2)
+        self.send_request_add_entry_to_action(
+            "next.vlan_meta",
+            [self.Exact("fabric_metadata.next_id", next_id_)],
+            "next.set_vlan",
+            [("new_vlan_id", vlan_id_)])
+
     # next_hops is a dictionary mapping mbr_id to (egress_port, smac, dmac)
     # we can break this method into several ones (group creation, etc.) if there
     # is a need when adding new tests in the future
@@ -242,6 +306,38 @@ class FabricTest(P4RuntimeTest):
         return req, self.write_request(req)
 
 
+class BridgingTest(FabricTest):
+
+    def runBridgingTest(self, tagged1, tagged2, pkt):
+        vlan_id = 10
+        mac_src = pkt[Ether].src
+        mac_dst = pkt[Ether].dst
+        self.setup_port(self.port1, vlan_id, tagged1)
+        self.setup_port(self.port2, vlan_id, tagged2)
+        # miss on filtering.fwd_classifier => bridging
+        self.add_bridging_entry(vlan_id, mac_src, MAC_MASK, 10)
+        self.add_bridging_entry(vlan_id, mac_dst, MAC_MASK, 20)
+        self.add_next_hop(10, self.port1)
+        self.add_next_hop(20, self.port2)
+
+        exp_pkt = pkt_decrement_ttl(pkt.copy())
+        pkt2 = pkt_mac_swap(pkt.copy())
+        exp_pkt2 = pkt_decrement_ttl(pkt2.copy())
+
+        if tagged1:
+            pkt = pkt_add_vlan(pkt, vlan_vid=vlan_id)
+            exp_pkt2 = pkt_add_vlan(exp_pkt2, vlan_vid=vlan_id)
+
+        if tagged2:
+            pkt2 = pkt_add_vlan(pkt2, vlan_vid=vlan_id)
+            exp_pkt = pkt_add_vlan(exp_pkt, vlan_vid=vlan_id)
+
+        testutils.send_packet(self, self.port1, str(pkt))
+        testutils.send_packet(self, self.port2, str(pkt2))
+        testutils.verify_each_packet_on_each_port(
+            self, [exp_pkt, exp_pkt2], [self.port2, self.port1])
+
+
 class ArpBroadcastTest(FabricTest):
     def runArpBroadcastTest(self, tagged_ports, untagged_ports):
         zero_mac_addr = ":".join(["00"] * 6)
@@ -282,38 +378,40 @@ class ArpBroadcastTest(FabricTest):
 
 
 class IPv4UnicastTest(FabricTest):
-    def runIPv4UnicastTest(self, pkt, dst_mac, exp_pkt=None, bidirectional=True):
-        vlan_id = 10
+    def runIPv4UnicastTest(self, pkt, dst_mac,
+                           tagged1=False, tagged2=False, prefix_len=24,
+                           exp_pkt=None, bidirectional=True):
         if IP not in pkt or Ether not in pkt:
-            self.fail("Cannot to IPv4 test with packet that is not IP")
+            self.fail("Cannot do IPv4 test with packet that is not IP")
+        vlan1 = VLAN_ID_1
+        vlan2 = VLAN_ID_2
+        next_id1 = 10
+        next_id2 = 20
         src_ipv4 = pkt[IP].src
         dst_ipv4 = pkt[IP].dst
         src_mac = pkt[Ether].src
         switch_mac = pkt[Ether].dst
-        self.set_ingress_port_vlan(self.port1, False, 0, vlan_id)
-        self.set_ingress_port_vlan(self.port2, False, 0, vlan_id)
+
+        self.setup_port(self.port1, vlan1, tagged1)
+        self.setup_port(self.port2, vlan2, tagged2)
         self.set_forwarding_type(self.port1, switch_mac, 0x800,
                                  FORWARDING_TYPE_UNICAST_IPV4)
         self.set_forwarding_type(self.port2, switch_mac, 0x800,
                                  FORWARDING_TYPE_UNICAST_IPV4)
-        self.add_forwarding_unicast_v4_entry(src_ipv4, 24, 100)
-        self.add_forwarding_unicast_v4_entry(dst_ipv4, 24, 200)
-        self.add_next_hop_L3(100, self.port1, switch_mac, src_mac)
-        self.add_next_hop_L3(200, self.port2, switch_mac, dst_mac)
-        self.set_egress_vlan_pop(self.port1, vlan_id)
-        self.set_egress_vlan_pop(self.port2, vlan_id)
+        self.add_forwarding_unicast_v4_entry(src_ipv4, prefix_len, next_id1)
+        self.add_forwarding_unicast_v4_entry(dst_ipv4, prefix_len, next_id2)
+        self.add_next_hop_L3(next_id1, self.port1, switch_mac, src_mac)
+        self.add_next_hop_L3(next_id2, self.port2, switch_mac, dst_mac)
+        self.add_vlan_meta(next_id1, vlan1)
+        self.add_vlan_meta(next_id2, vlan2)
 
         if exp_pkt is None:
             exp_pkt = pkt.copy()
             exp_pkt[Ether].src = switch_mac
             exp_pkt[Ether].dst = dst_mac
             exp_pkt[IP].ttl = exp_pkt[IP].ttl - 1
-
-        testutils.send_packet(self, self.port1, str(pkt))
-        testutils.verify_packets(self, exp_pkt, [self.port2])
-
-        if not bidirectional:
-            return
+            if tagged2:
+                exp_pkt = pkt_add_vlan(exp_pkt, vlan_vid=vlan2)
 
         pkt2 = pkt.copy()
         pkt2[Ether].src = dst_mac
@@ -325,8 +423,23 @@ class IPv4UnicastTest(FabricTest):
         exp_pkt2[Ether].dst = src_mac
         exp_pkt2[IP].ttl = exp_pkt2[IP].ttl - 1
 
-        testutils.send_packet(self, self.port2, str(pkt2))
-        testutils.verify_packets(self, exp_pkt2, [self.port1])
+        if tagged1:
+            pkt = pkt_add_vlan(pkt, vlan_vid=vlan1)
+            exp_pkt2 = pkt_add_vlan(exp_pkt2, vlan_vid=vlan1)
+
+        if tagged2:
+            pkt2 = pkt_add_vlan(pkt2, vlan_vid=vlan2)
+
+        testutils.send_packet(self, self.port1, str(pkt))
+        exp_pkts = [exp_pkt]
+        exp_ports = [self.port2]
+
+        if bidirectional:
+            testutils.send_packet(self, self.port2, str(pkt2))
+            exp_pkts.append(exp_pkt2)
+            exp_ports.append(self.port1)
+
+        testutils.verify_each_packet_on_each_port(self, exp_pkts, exp_ports)
 
 
 class PacketOutTest(FabricTest):
@@ -444,8 +557,3 @@ class SpgwSimpleTest(SpgwTest):
             [("teid", stringify(1, 4)), ("s1u_enb_addr", s1u_enb_ipv4_),
              ("s1u_sgw_addr", s1u_sgw_ipv4_)])
         self.write_request(req)
-
-
-def make_gtp(msg_len, teid, flags=0x30, msg_type=0xff):
-    """Convenience function since GTP header has no scapy support"""
-    return struct.pack(">BBHL", flags, msg_type, msg_len, teid)
