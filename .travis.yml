@@ -5,4 +5,4 @@ before_install:
 - pip install pycodestyle
 script:
 # Run pycodestyle on all .py files in all subfolders
-- find . -name \*.py -exec pycodestyle --max-line-length=120 --ignore=E127,E722 {} +
+- find . -name \*.py -exec pycodestyle --max-line-length=120 --ignore=E126,E127,E722 {} +
