@@ -157,14 +157,16 @@ class FabricTest(P4RuntimeTest):
                             fwd_type=FORWARDING_TYPE_UNICAST_IPV4):
         ingress_port_ = stringify(ingress_port, 2)
         eth_dstAddr_ = mac_to_binary(eth_dstAddr)
+        eth_mask_ = mac_to_binary(MAC_MASK)
         ethertype_ = stringify(ethertype, 2)
         fwd_type_ = stringify(fwd_type, 1)
         self.send_request_add_entry_to_action(
             "filtering.fwd_classifier",
             [self.Exact("standard_metadata.ingress_port", ingress_port_),
-             self.Exact("hdr.ethernet.dst_addr", eth_dstAddr_),
+             self.Ternary("hdr.ethernet.dst_addr", eth_dstAddr_, eth_mask_),
              self.Exact("hdr.vlan_tag.ether_type", ethertype_)],
-            "filtering.set_forwarding_type", [("fwd_type", fwd_type_)])
+            "filtering.set_forwarding_type", [("fwd_type", fwd_type_)],
+            priority=DEFAULT_PRIORITY)
 
     def add_bridging_entry(self, vlan_id, eth_dstAddr, eth_dstAddr_mask,
                            next_id):
@@ -180,14 +182,14 @@ class FabricTest(P4RuntimeTest):
             "forwarding.set_next_id_bridging", [("next_id", next_id_)],
             DEFAULT_PRIORITY)
 
-    def add_forwarding_unicast_v4_entry(self, ipv4_dstAddr, ipv4_pLen,
+    def add_forwarding_routing_v4_entry(self, ipv4_dstAddr, ipv4_pLen,
                                         next_id):
         ipv4_dstAddr_ = ipv4_to_binary(ipv4_dstAddr)
         next_id_ = stringify(next_id, 4)
         self.send_request_add_entry_to_action(
-            "forwarding.unicast_v4",
+            "forwarding.routing_v4",
             [self.Lpm("hdr.ipv4.dst_addr", ipv4_dstAddr_, ipv4_pLen)],
-            "forwarding.set_next_id_unicast_v4", [("next_id", next_id_)])
+            "forwarding.set_next_id_routing_v4", [("next_id", next_id_)])
 
     def add_forwarding_acl_cpu_entry(self, eth_type=None, clone=False):
         eth_type_ = stringify(eth_type, 2)
@@ -398,8 +400,8 @@ class IPv4UnicastTest(FabricTest):
                                  FORWARDING_TYPE_UNICAST_IPV4)
         self.set_forwarding_type(self.port2, switch_mac, 0x800,
                                  FORWARDING_TYPE_UNICAST_IPV4)
-        self.add_forwarding_unicast_v4_entry(src_ipv4, prefix_len, next_id1)
-        self.add_forwarding_unicast_v4_entry(dst_ipv4, prefix_len, next_id2)
+        self.add_forwarding_routing_v4_entry(src_ipv4, prefix_len, next_id1)
+        self.add_forwarding_routing_v4_entry(dst_ipv4, prefix_len, next_id2)
         self.add_next_hop_L3(next_id1, self.port1, switch_mac, src_mac)
         self.add_next_hop_L3(next_id2, self.port2, switch_mac, dst_mac)
         self.add_vlan_meta(next_id1, vlan1)
@@ -495,8 +497,8 @@ class SpgwMPLSTest(SpgwTest):
                                    vlan_id=0, new_vlan_id=4094)
         self.set_ingress_port_vlan(self.port2, vlan_valid=False,
                                    vlan_id=0, new_vlan_id=20)
-        self.add_forwarding_unicast_v4_entry(S1U_ENB_IPV4, 32, 1)
-        self.add_forwarding_unicast_v4_entry(UE_IPV4, 32, 2)
+        self.add_forwarding_routing_v4_entry(S1U_ENB_IPV4, 32, 1)
+        self.add_forwarding_routing_v4_entry(UE_IPV4, 32, 2)
         self.add_next_hop_L3(1, self.port2, self.SWITCH_MAC_2, self.DMAC_2)
         self.add_next_hop_mpls_v4(2, self.port1, self.SWITCH_MAC_1, self.DMAC_1,
                                   self.mpls_label)
@@ -531,8 +533,8 @@ class SpgwSimpleTest(SpgwTest):
         self.set_ingress_port_vlan(self.port1, False, 0, vlan_id)
         self.set_ingress_port_vlan(self.port2, False, 0, vlan_id)
 
-        self.add_forwarding_unicast_v4_entry(S1U_ENB_IPV4, 32, 1)
-        self.add_forwarding_unicast_v4_entry(UE_IPV4, 32, 2)
+        self.add_forwarding_routing_v4_entry(S1U_ENB_IPV4, 32, 1)
+        self.add_forwarding_routing_v4_entry(UE_IPV4, 32, 2)
         self.add_next_hop_L3(1, self.port2, self.SWITCH_MAC_2, self.DMAC_2)
         self.add_next_hop_L3(2, self.port1, self.SWITCH_MAC_1, self.DMAC_1)
 
