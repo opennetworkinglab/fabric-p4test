@@ -122,7 +122,7 @@ class FabricIPv4UnicastGroupTest(FabricTest):
         self.set_ingress_port_vlan(self.port1, False, 0, vlan_id)
         self.set_forwarding_type(self.port1, SWITCH_MAC, 0x800,
                                  FORWARDING_TYPE_UNICAST_IPV4)
-        self.add_forwarding_unicast_v4_entry(HOST2_IPV4, 24, 300)
+        self.add_forwarding_routing_v4_entry(HOST2_IPV4, 24, 300)
         grp_id = 66
         mbrs = {
             2: (self.port2, SWITCH_MAC, HOST2_MAC),
@@ -155,7 +155,7 @@ class FabricIPv4UnicastGroupTestAllPort(FabricTest):
         self.set_ingress_port_vlan(self.port1, False, 0, vlan_id)
         self.set_forwarding_type(self.port1, SWITCH_MAC, 0x800,
                                  FORWARDING_TYPE_UNICAST_IPV4)
-        self.add_forwarding_unicast_v4_entry(HOST2_IPV4, 24, 300)
+        self.add_forwarding_routing_v4_entry(HOST2_IPV4, 24, 300)
         grp_id = 66
         mbrs = {
             2: (self.port2, SWITCH_MAC, HOST2_MAC),
@@ -212,7 +212,7 @@ class FabricIPv4MPLSTest(FabricTest):
         self.set_ingress_port_vlan(self.port1, False, 0, vlan_id)
         self.set_forwarding_type(self.port1, SWITCH_MAC, 0x800,
                                  FORWARDING_TYPE_UNICAST_IPV4)
-        self.add_forwarding_unicast_v4_entry(HOST2_IPV4, 24, 400)
+        self.add_forwarding_routing_v4_entry(HOST2_IPV4, 24, 400)
         mpls_label = 0xaba
         self.add_next_hop_mpls_v4(
             400, self.port2, SWITCH_MAC, HOST2_MAC, mpls_label)
@@ -241,7 +241,7 @@ class FabricIPv4MPLSGroupTest(FabricTest):
         self.set_ingress_port_vlan(self.port1, False, 0, vlan_id)
         self.set_forwarding_type(self.port1, SWITCH_MAC, 0x800,
                                  FORWARDING_TYPE_UNICAST_IPV4)
-        self.add_forwarding_unicast_v4_entry(HOST2_IPV4, 24, 500)
+        self.add_forwarding_routing_v4_entry(HOST2_IPV4, 24, 500)
         grp_id = 77
         mpls_label = 0xaba
         mbrs = {2: (self.port2, SWITCH_MAC, HOST2_MAC, mpls_label)}
