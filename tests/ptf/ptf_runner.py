@@ -15,7 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-
+import Queue
 import argparse
 import json
 import logging
@@ -24,6 +24,7 @@ import re
 import struct
 import subprocess
 import sys
+import threading
 from collections import OrderedDict
 
 import google.protobuf.text_format
@@ -96,24 +97,60 @@ def update_config(p4info_path, bmv2_json_path, tofino_bin_path,
     stub = p4runtime_pb2.P4RuntimeStub(channel)
 
     info("Sending P4 config")
-    request = p4runtime_pb2.SetForwardingPipelineConfigRequest()
-    request.device_id = device_id
-    config = request.config
-    with open(p4info_path, 'r') as p4info_f:
-        google.protobuf.text_format.Merge(p4info_f.read(), config.p4info)
-    if bmv2_json_path is not None:
-        device_config = build_bmv2_config(bmv2_json_path)
-    else:
-        device_config = build_tofino_config("name", tofino_bin_path, tofino_cxt_json_path)
-    config.p4_device_config = device_config.SerializeToString()
-    request.action = p4runtime_pb2.SetForwardingPipelineConfigRequest.VERIFY_AND_COMMIT
+
+    # Send master arbitration via stream channel
+    # This should go in library, to be re-used also by base_test.py.
+    stream_out_q = Queue.Queue()
+
+    def stream_req_iterator():
+        while True:
+            p = stream_out_q.get()
+            if p is None:
+                break
+            yield p
+
+    def stream_recv(s):
+        pass
+
+    stream = stub.StreamChannel(stream_req_iterator())
+    stream_recv_thread = threading.Thread(target=stream_recv, args=(stream,))
+    stream_recv_thread.start()
+
+    req = p4runtime_pb2.StreamMessageRequest()
+    arbitration = req.arbitration
+    arbitration.device_id = device_id
+    election_id = arbitration.election_id
+    election_id.high = 0
+    election_id.low = 1
+    stream_out_q.put(req)
+
     try:
-        stub.SetForwardingPipelineConfig(request)
-    except Exception as e:
-        error("Error during SetForwardingPipelineConfig")
-        error(str(e))
-        return False
-    return True
+        # Set pipeline config.
+        request = p4runtime_pb2.SetForwardingPipelineConfigRequest()
+        request.device_id = device_id
+        election_id = request.election_id
+        election_id.high = 0
+        election_id.low = 1
+        config = request.config
+        with open(p4info_path, 'r') as p4info_f:
+            google.protobuf.text_format.Merge(p4info_f.read(), config.p4info)
+        if bmv2_json_path is not None:
+            device_config = build_bmv2_config(bmv2_json_path)
+        else:
+            device_config = build_tofino_config("name", tofino_bin_path,
+                                                tofino_cxt_json_path)
+        config.p4_device_config = device_config.SerializeToString()
+        request.action = p4runtime_pb2.SetForwardingPipelineConfigRequest.VERIFY_AND_COMMIT
+        try:
+            stub.SetForwardingPipelineConfig(request)
+        except Exception as e:
+            error("Error during SetForwardingPipelineConfig")
+            error(str(e))
+            return False
+        return True
+    finally:
+        stream_out_q.put(None)
+        stream_recv_thread.join()
 
 
 def run_test(p4info_path, grpc_addr, device_id, cpu_port, ptfdir, port_map_path,
@@ -241,10 +278,12 @@ def main():
         sys.exit(1)
     if device == 'tofino':
         if not os.path.exists(args.tofino_bin):
-            error("Tofino binary config file {} not found".format(args.tofino_bin))
+            error("Tofino binary config file {} not found".format(
+                args.tofino_bin))
             sys.exit(1)
         if not os.path.exists(args.tofino_ctx_json):
-            error("Tofino context json file {} not found".format(args.tofino_ctx_json))
+            error("Tofino context json file {} not found".format(
+                args.tofino_ctx_json))
             sys.exit(1)
         tofino_bin = args.tofino_bin
         tofino_ctx_json = args.tofino_ctx_json
