@@ -28,8 +28,8 @@ from collections import OrderedDict
 
 import google.protobuf.text_format
 import grpc
-from p4.v1 import p4runtime_pb2
 from p4.tmp import p4config_pb2
+from p4.v1 import p4runtime_pb2
 
 from bmv2 import Bmv2Switch
 
@@ -116,7 +116,8 @@ def update_config(p4info_path, bmv2_json_path, tofino_bin_path,
     return True
 
 
-def run_test(p4info_path, grpc_addr, cpu_port, ptfdir, port_map_path, platform=None, extra_args=()):
+def run_test(p4info_path, grpc_addr, device_id, cpu_port, ptfdir, port_map_path,
+             platform=None, extra_args=()):
     """
     Runs PTF tests included in provided directory.
     Device must be running and configfured with appropriate P4 program.
@@ -151,6 +152,7 @@ def run_test(p4info_path, grpc_addr, cpu_port, ptfdir, port_map_path, platform=N
     cmd.extend(ifaces)
     test_params = 'p4info=\'{}\''.format(p4info_path)
     test_params += ';grpcaddr=\'{}\''.format(grpc_addr)
+    test_params += ';device_id=\'{}\''.format(device_id)
     test_params += ';cpu_port=\'{}\''.format(cpu_port)
     if platform is not None:
         test_params += ';pltfm=\'{}\''.format(platform)
@@ -205,7 +207,7 @@ def main():
                         type=str, default='localhost:50051')
     parser.add_argument('--device-id',
                         help='Device id for device under test',
-                        type=int, default=0)
+                        type=int, default=1)
     parser.add_argument('--cpu-port',
                         help='CPU port ID of device under test',
                         type=int, required=True)
@@ -284,6 +286,7 @@ def main():
 
         if not args.skip_test:
             success = run_test(p4info_path=args.p4info,
+                               device_id=args.device_id,
                                grpc_addr=args.grpc_addr,
                                cpu_port=args.cpu_port,
                                ptfdir=args.ptf_dir,
