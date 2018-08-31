@@ -14,12 +14,15 @@
 # limitations under the License.
 #
 import struct
+from operator import ior
 
 from p4.v1 import p4runtime_pb2
 from ptf import testutils as testutils
-from scapy.layers.inet import IP
+from ptf.mask import Mask
+from scapy.layers.inet import IP, UDP, TCP
 from scapy.layers.l2 import Ether, Dot1Q
 
+import xnt
 from base_test import P4RuntimeTest, stringify, mac_to_binary, ipv4_to_binary
 
 DEFAULT_PRIORITY = 10
@@ -34,6 +37,17 @@ UDP_GTP_PORT = 2152
 
 ETH_TYPE_ARP = 0x0806
 ETH_TYPE_IPV4 = 0x0800
+
+# In case the "correct" version of scapy (from p4lang) is not installed, we
+# provide the INT header formats in xnt.py
+# import scapy.main
+# scapy.main.load_contrib("xnt")
+# INT_META_HDR = scapy.contrib.xnt.INT_META_HDR
+# INT_L45_HEAD = scapy.contrib.xnt.INT_L45_HEAD
+# INT_L45_TAIL = scapy.contrib.xnt.INT_L45_TAIL
+INT_META_HDR = xnt.INT_META_HDR
+INT_L45_HEAD = xnt.INT_L45_HEAD
+INT_L45_TAIL = xnt.INT_L45_TAIL
 
 MAC_MASK = ":".join(["ff"] * 6)
 SWITCH_MAC = "00:00:00:00:aa:01"
@@ -50,6 +64,31 @@ UE_IPV4 = "16.255.255.252"
 
 VLAN_ID_1 = 100
 VLAN_ID_2 = 200
+
+# INT instructions
+INT_SWITCH_ID = 1 << 15
+INT_IG_EG_PORT = 1 << 14
+INT_HOP_LATENCY = 1 << 13
+INT_QUEUE_OCCUPANCY = 1 << 12
+INT_IG_TSTAMP = 1 << 11
+INT_EG_TSTAMP = 1 << 10
+INT_QUEUE_CONGESTION = 1 << 9
+INT_EG_PORT_TX = 1 << 8
+INT_ALL_INSTRUCTIONS = [INT_SWITCH_ID, INT_IG_EG_PORT, INT_HOP_LATENCY,
+                        INT_QUEUE_OCCUPANCY, INT_IG_TSTAMP, INT_EG_TSTAMP,
+                        INT_QUEUE_CONGESTION, INT_EG_PORT_TX]
+
+INT_INS_TO_NAME = {
+    INT_SWITCH_ID: "switch_id",
+    INT_IG_EG_PORT: "ig_eg_port",
+    INT_HOP_LATENCY: "hop_latency",
+    INT_QUEUE_OCCUPANCY: "queue_occupancy",
+    INT_IG_TSTAMP: "ig_tstamp",
+    INT_EG_TSTAMP: "eg_tstamp",
+    INT_QUEUE_CONGESTION: "queue_congestion",
+    INT_EG_PORT_TX: "eg_port_tx"
+
+}
 
 
 def make_gtp(msg_len, teid, flags=0x30, msg_type=0xff):
@@ -559,3 +598,226 @@ class SpgwSimpleTest(SpgwTest):
             [("teid", stringify(1, 4)), ("s1u_enb_addr", s1u_enb_ipv4_),
              ("s1u_sgw_addr", s1u_sgw_ipv4_)])
         self.write_request(req)
+
+
+class IntTest(IPv4UnicastTest):
+    def setup_transit(self, switch_id):
+        self.send_request_add_entry_to_action(
+            "tb_int_insert",
+            [],
+            "int_transit", [("switch_id", stringify(switch_id, 4))])
+
+        for inst_mask in ("0003", "0407"):
+            req = p4runtime_pb2.WriteRequest()
+            for i in xrange(16):
+                base = "int_set_header_%s_i" % inst_mask
+                mf = self.Exact("hdr.int_header.instruction_mask_" + inst_mask,
+                                stringify(i, 1))
+                action = base + str(i)
+                self.push_update_add_entry_to_action(
+                    req, "tb_int_inst_" + inst_mask, [mf], action, [])
+            self.write_request(req)
+
+    def setup_source_port(self, source_port):
+        source_port_ = stringify(source_port, 2)
+        self.send_request_add_entry_to_action(
+            "tb_set_source",
+            [self.Exact("standard_metadata.ingress_port", source_port_)],
+            "int_set_source", [])
+
+    def get_ins_mask(self, instructions):
+        return reduce(ior, instructions)
+
+    def get_ins_from_mask(self, ins_mask):
+        instructions = []
+        for i in range(16):
+            ins = ins_mask & (1 << i)
+            if ins:
+                instructions.append(ins)
+        return instructions
+
+    def get_int_pkt(self, pkt, instructions, max_hop, transit_hops=0, hop_metadata=None):
+        proto = UDP if UDP in pkt else TCP
+        int_pkt = pkt.copy()
+        int_pkt[IP].tos = 0x04
+        shim_len = 4 + len(instructions) * transit_hops
+        int_shim = INT_L45_HEAD(int_type=1, length=shim_len)
+        int_header = INT_META_HDR(
+            ins_cnt=len(instructions),
+            max_hop_cnt=max_hop,
+            total_hop_cnt=transit_hops,
+            inst_mask=self.get_ins_mask(instructions))
+        int_tail = INT_L45_TAIL(next_proto=pkt[IP].proto, proto_param=pkt[proto].dport)
+        metadata = "".join([hop_metadata] * transit_hops)
+        int_payload = int_shim / int_header / metadata / int_tail
+        int_pkt[proto].payload = int_payload / int_pkt[proto].payload
+        return int_pkt
+
+    def get_int_metadata(self, instructions, switch_id, ig_port, eg_port):
+        int_metadata = ""
+        masked_ins_cnt = len(instructions)
+        if INT_SWITCH_ID in instructions:
+            int_metadata += stringify(switch_id, 4)
+            masked_ins_cnt -= 1
+        if INT_IG_EG_PORT in instructions:
+            int_metadata += stringify(ig_port, 2) + stringify(eg_port, 2)
+            masked_ins_cnt -= 1
+        int_metadata += "".join(["\x00\x00\x00\x00"] * masked_ins_cnt)
+        return int_metadata, masked_ins_cnt
+
+    def setup_source_flow(self, ipv4_src, ipv4_dst, sport, dport, instructions, max_hop):
+        ipv4_src_ = ipv4_to_binary(ipv4_src)
+        ipv4_dst_ = ipv4_to_binary(ipv4_dst)
+        ipv4_mask = ipv4_to_binary("255.255.255.255")
+        sport_ = stringify(sport, 2)
+        dport_ = stringify(dport, 2)
+        port_mask = stringify(65535, 2)
+
+        instructions = set(instructions)
+        ins_mask = self.get_ins_mask(instructions)
+        ins_cnt = len(instructions)
+        ins_mask0407 = (ins_mask >> 8) & 0xF
+        ins_mask0003 = ins_mask >> 12
+
+        max_hop_ = stringify(max_hop, 1)
+        ins_cnt_ = stringify(ins_cnt, 1)
+        ins_mask0003_ = stringify(ins_mask0003, 1)
+        ins_mask0407_ = stringify(ins_mask0407, 1)
+
+        self.send_request_add_entry_to_action(
+            "tb_int_source",
+            [self.Ternary("hdr.ipv4.src_addr", ipv4_src_, ipv4_mask),
+             self.Ternary("hdr.ipv4.dst_addr", ipv4_dst_, ipv4_mask),
+             self.Ternary("fabric_metadata.l4_src_port", sport_, port_mask),
+             self.Ternary("fabric_metadata.l4_dst_port", dport_, port_mask),
+             ],
+            "int_source_dscp", [
+                ("max_hop", max_hop_),
+                ("ins_cnt", ins_cnt_),
+                ("ins_mask0003", ins_mask0003_),
+                ("ins_mask0407", ins_mask0407_)
+            ], priority=DEFAULT_PRIORITY)
+
+    def runIntSourceTest(self, pkt, tagged1, tagged2, instructions,
+                         with_transit=True, ignore_csum=False, switch_id=1,
+                         max_hop=5):
+        if IP not in pkt:
+            self.fail("Packet is not IP")
+        if UDP not in pkt and TCP not in pkt:
+            self.fail("Packet must be UDP or TCP for INT tests")
+        proto = UDP if UDP in pkt else TCP
+
+        # will use runIPv4UnicastTest
+        dst_mac = HOST2_MAC
+        ig_port = self.port1
+        eg_port = self.port2
+
+        ipv4_src = pkt[IP].src
+        ipv4_dst = pkt[IP].dst
+        sport = pkt[proto].sport
+        dport = pkt[proto].dport
+
+        instructions = set(instructions)
+        ins_cnt = len(instructions)
+
+        self.setup_source_port(ig_port)
+        self.setup_source_flow(
+            ipv4_src=ipv4_src, ipv4_dst=ipv4_dst, sport=sport, dport=dport,
+            instructions=instructions, max_hop=max_hop)
+        if with_transit:
+            self.setup_transit(switch_id)
+
+        if with_transit:
+            int_metadata, masked_ins_cnt = self.get_int_metadata(
+                instructions=instructions, switch_id=switch_id,
+                ig_port=ig_port, eg_port=eg_port)
+        else:
+            int_metadata, masked_ins_cnt = "", ins_cnt
+
+        exp_pkt = self.get_int_pkt(
+            pkt=pkt, instructions=instructions, max_hop=max_hop,
+            transit_hops=1 if with_transit else 0,
+            hop_metadata=int_metadata)
+
+        exp_pkt[Ether].src = exp_pkt[Ether].dst
+        exp_pkt[Ether].dst = dst_mac
+        exp_pkt[IP].ttl = exp_pkt[IP].ttl - 1
+
+        if tagged2:
+            # VLAN if tagged1 will be added by runIPv4UnicastTest
+            exp_pkt = pkt_add_vlan(exp_pkt, VLAN_ID_2)
+
+        if with_transit or ignore_csum:
+            mask_pkt = Mask(exp_pkt)
+            if with_transit:
+                offset_metadata = len(exp_pkt) - len(exp_pkt[proto].payload) \
+                                  + len(INT_L45_HEAD()) + len(INT_META_HDR()) \
+                                  + (ins_cnt - masked_ins_cnt) * 4
+                mask_pkt.set_do_not_care(offset_metadata * 8, masked_ins_cnt * 4 * 8)
+            if ignore_csum:
+                csum_offset = len(exp_pkt) - len(exp_pkt[IP].payload) \
+                              + (6 if proto is UDP else 16)
+                mask_pkt.set_do_not_care(csum_offset * 8, 2 * 8)
+            exp_pkt = mask_pkt
+
+        self.runIPv4UnicastTest(pkt=pkt, dst_mac=HOST2_MAC, prefix_len=32,
+                                exp_pkt=exp_pkt, bidirectional=False,
+                                tagged1=tagged1, tagged2=tagged2)
+
+    def runIntTransitTest(self, pkt, tagged1, tagged2,
+                          ignore_csum=False, switch_id=1):
+        if IP not in pkt:
+            self.fail("Packet is not IP")
+        if UDP not in pkt and TCP not in pkt:
+            self.fail("Packet must be UDP or TCP for INT tests")
+        if INT_META_HDR not in pkt:
+            self.fail("Packet must have INT_META_HDR")
+        if INT_L45_HEAD not in pkt:
+            self.fail("Packet must have INT_L45_HEAD")
+
+        proto = UDP if UDP in pkt else TCP
+
+        # will use runIPv4UnicastTest
+        dst_mac = HOST2_MAC
+        ig_port = self.port1
+        eg_port = self.port2
+
+        self.setup_transit(switch_id)
+
+        instructions = self.get_ins_from_mask(pkt[INT_META_HDR].inst_mask)
+        ins_cnt = len(instructions)
+        assert ins_cnt == pkt[INT_META_HDR].ins_cnt
+
+        # Forge expected packet based on pkt's ins_mask
+        new_metadata, masked_ins_cnt = self.get_int_metadata(
+            instructions=instructions, switch_id=switch_id,
+            ig_port=ig_port, eg_port=eg_port)
+        exp_pkt = pkt.copy()
+        exp_pkt[INT_L45_HEAD].length += pkt[INT_META_HDR].ins_cnt
+        exp_pkt[INT_META_HDR].total_hop_cnt += 1
+        exp_pkt[INT_META_HDR].payload = new_metadata + str(exp_pkt[INT_META_HDR].payload)
+
+        exp_pkt[Ether].src = exp_pkt[Ether].dst
+        exp_pkt[Ether].dst = dst_mac
+        exp_pkt[IP].ttl = exp_pkt[IP].ttl - 1
+
+        if tagged2:
+            # VLAN if tagged1 will be added by runIPv4UnicastTest
+            exp_pkt = pkt_add_vlan(exp_pkt, VLAN_ID_2)
+
+        if ignore_csum or masked_ins_cnt > 0:
+            mask_pkt = Mask(exp_pkt)
+            if ignore_csum:
+                csum_offset = len(exp_pkt) - len(exp_pkt[IP].payload) \
+                              + (6 if proto is UDP else 16)
+                mask_pkt.set_do_not_care(csum_offset * 8, 2 * 8)
+            if masked_ins_cnt > 0:
+                offset_metadata = len(exp_pkt) - len(exp_pkt[proto].payload) \
+                                  + len(INT_L45_HEAD()) + len(INT_META_HDR()) \
+                                  + (ins_cnt - masked_ins_cnt) * 4
+                mask_pkt.set_do_not_care(offset_metadata * 8, masked_ins_cnt * 4 * 8)
+            exp_pkt = mask_pkt
+
+        self.runIPv4UnicastTest(pkt=pkt, dst_mac=HOST2_MAC,
+                                tagged1=tagged1, tagged2=tagged2,
+                                prefix_len=32, exp_pkt=exp_pkt, bidirectional=False)
