@@ -133,7 +133,7 @@ class FabricTest(P4RuntimeTest):
             "int_egress.int_prep", None, "int_egress.int_transit",
             [("switch_id", stringify(1, 4))])
 
-        req = p4runtime_pb2.WriteRequest()
+        req = self.get_new_write_request()
         for i in xrange(16):
             base = "int_set_header_0003_i"
             mf = self.Exact("hdr.int_header.instruction_mask_0003",
@@ -145,7 +145,7 @@ class FabricTest(P4RuntimeTest):
                 action, [])
         self.write_request(req)
 
-        req = p4runtime_pb2.WriteRequest()
+        req = self.get_new_write_request()
         for i in xrange(16):
             base = "int_set_header_0407_i"
             mf = self.Exact("hdr.int_header.instruction_mask_0407",
@@ -333,8 +333,7 @@ class FabricTest(P4RuntimeTest):
             grp_id)
 
     def add_mcast_group(self, group_id, ports):
-        req = p4runtime_pb2.WriteRequest()
-        req.device_id = self.device_id
+        req = self.get_new_write_request()
         update = req.updates.add()
         update.type = p4runtime_pb2.Update.INSERT
         pre_entry = update.entity.packet_replication_engine_entry
@@ -544,8 +543,7 @@ class SpgwMPLSTest(SpgwTest):
         self.set_egress_vlan_pop(self.port1, 20)
         self.set_egress_vlan_pop(self.port2, 4094)
 
-        req = p4runtime_pb2.WriteRequest()
-        req.device_id = self.device_id
+        req = self.get_new_write_request()
         s1u_enb_ipv4_ = ipv4_to_binary(S1U_ENB_IPV4)
         s1u_sgw_ipv4_ = ipv4_to_binary(S1U_SGW_IPV4)
         end_point_ipv4_ = ipv4_to_binary(UE_IPV4)
@@ -580,8 +578,7 @@ class SpgwSimpleTest(SpgwTest):
         self.set_egress_vlan_pop(self.port1, vlan_id)
         self.set_egress_vlan_pop(self.port2, vlan_id)
 
-        req = p4runtime_pb2.WriteRequest()
-        req.device_id = self.device_id
+        req = self.get_new_write_request()
         s1u_enb_ipv4_ = ipv4_to_binary(S1U_ENB_IPV4)
         s1u_sgw_ipv4_ = ipv4_to_binary(S1U_SGW_IPV4)
         end_point_ipv4_ = ipv4_to_binary(UE_IPV4)
@@ -608,7 +605,7 @@ class IntTest(IPv4UnicastTest):
             "int_transit", [("switch_id", stringify(switch_id, 4))])
 
         for inst_mask in ("0003", "0407"):
-            req = p4runtime_pb2.WriteRequest()
+            req = self.get_new_write_request()
             for i in xrange(16):
                 base = "int_set_header_%s_i" % inst_mask
                 mf = self.Exact("hdr.int_header.instruction_mask_" + inst_mask,

@@ -181,7 +181,6 @@ class P4RuntimeWriteException(Exception):
 class P4RuntimeTest(BaseTest):
     def setUp(self):
         BaseTest.setUp(self)
-        self.device_id = 0
 
         # Setting up PTF dataplane
         self.dataplane = ptf.dataplane_instance
@@ -194,6 +193,10 @@ class P4RuntimeTest(BaseTest):
         grpc_addr = testutils.test_param_get("grpcaddr")
         if grpc_addr is None:
             grpc_addr = 'localhost:50051'
+
+        self.device_id = int(testutils.test_param_get("device_id"))
+        if self.device_id is None:
+            self.fail("Device ID is not set")
 
         self.cpu_port = int(testutils.test_param_get("cpu_port"))
         if self.cpu_port is None:
@@ -218,6 +221,7 @@ class P4RuntimeTest(BaseTest):
         # autocleanup of tests (see definition of autocleanup decorator below)
         self.reqs = []
 
+        self.election_id = 1
         self.set_up_stream()
 
     # In order to make writing tests easier, we accept any suffix that uniquely
@@ -265,12 +269,9 @@ class P4RuntimeTest(BaseTest):
         req = p4runtime_pb2.StreamMessageRequest()
         arbitration = req.arbitration
         arbitration.device_id = self.device_id
-        # TODO(antonin): we currently allow 0 as the election id in P4Runtime;
-        # if this changes we will need to use an election id > 0 and update the
-        # Write message to include the election id
-        # election_id = arbitration.election_id
-        # election_id.high = 0
-        # election_id.low = 1
+        election_id = arbitration.election_id
+        election_id.high = 0
+        election_id.low = self.election_id
         self.stream_out_q.put(req)
 
         rep = self.get_stream_packet("arbitration", timeout=2)
@@ -478,6 +479,14 @@ class P4RuntimeTest(BaseTest):
             self.reqs.append(req)
         return rep
 
+    def get_new_write_request(self):
+        req = p4runtime_pb2.WriteRequest()
+        req.device_id = self.device_id
+        election_id = req.election_id
+        election_id.high = 0
+        election_id.low = self.election_id
+        return req
+
     #
     # Convenience functions to build and send P4Runtime write requests
     #
@@ -496,8 +505,7 @@ class P4RuntimeTest(BaseTest):
                                  p4runtime_pb2.Update.INSERT)
 
     def send_request_add_member(self, ap_name, mbr_id, a_name, params):
-        req = p4runtime_pb2.WriteRequest()
-        req.device_id = self.device_id
+        req = self.get_new_write_request()
         self.push_update_add_member(req, ap_name, mbr_id, a_name, params)
         return req, self.write_request(req)
 
@@ -506,8 +514,7 @@ class P4RuntimeTest(BaseTest):
                                  p4runtime_pb2.Update.MODIFY)
 
     def send_request_modify_member(self, ap_name, mbr_id, a_name, params):
-        req = p4runtime_pb2.WriteRequest()
-        req.device_id = self.device_id
+        req = self.get_new_write_request()
         self.push_update_modify_member(req, ap_name, mbr_id, a_name, params)
         return req, self.write_request(req, store=False)
 
@@ -524,8 +531,7 @@ class P4RuntimeTest(BaseTest):
             member.member_id = mbr_id
 
     def send_request_add_group(self, ap_name, grp_id, grp_size=32, mbr_ids=()):
-        req = p4runtime_pb2.WriteRequest()
-        req.device_id = self.device_id
+        req = self.get_new_write_request()
         self.push_update_add_group(req, ap_name, grp_id, grp_size, mbr_ids)
         return req, self.write_request(req)
 
@@ -541,8 +547,7 @@ class P4RuntimeTest(BaseTest):
             member.member_id = mbr_id
 
     def send_request_set_group_membership(self, ap_name, grp_id, mbr_ids=()):
-        req = p4runtime_pb2.WriteRequest()
-        req.device_id = self.device_id
+        req = self.get_new_write_request()
         self.push_update_set_group_membership(req, ap_name, grp_id, mbr_ids)
         return req, self.write_request(req, store=False)
 
@@ -568,8 +573,7 @@ class P4RuntimeTest(BaseTest):
         self.set_action_entry(table_entry, a_name, params)
 
     def send_request_add_entry_to_action(self, t_name, mk, a_name, params, priority=0):
-        req = p4runtime_pb2.WriteRequest()
-        req.device_id = self.device_id
+        req = self.get_new_write_request()
         self.push_update_add_entry_to_action(req, t_name, mk, a_name, params, priority)
         return req, self.write_request(req, store=(mk is not None))
 
@@ -585,8 +589,7 @@ class P4RuntimeTest(BaseTest):
         table_entry.action.action_profile_member_id = mbr_id
 
     def send_request_add_entry_to_member(self, t_name, mk, mbr_id):
-        req = p4runtime_pb2.WriteRequest()
-        req.device_id = self.device_id
+        req = self.get_new_write_request()
         self.push_update_add_entry_to_member(req, t_name, mk, mbr_id)
         return req, self.write_request(req, store=(mk is not None))
 
@@ -602,8 +605,7 @@ class P4RuntimeTest(BaseTest):
         table_entry.action.action_profile_group_id = grp_id
 
     def send_request_add_entry_to_group(self, t_name, mk, grp_id):
-        req = p4runtime_pb2.WriteRequest()
-        req.device_id = self.device_id
+        req = self.get_new_write_request()
         self.push_update_add_entry_to_group(req, t_name, mk, grp_id)
         return req, self.write_request(req, store=(mk is not None))
 
@@ -616,8 +618,7 @@ class P4RuntimeTest(BaseTest):
             for update in reversed(req.updates):
                 if update.type == p4runtime_pb2.Update.INSERT:
                     updates.append(update)
-        new_req = p4runtime_pb2.WriteRequest()
-        new_req.device_id = self.device_id
+        new_req = self.get_new_write_request()
         for update in updates:
             update.type = p4runtime_pb2.Update.DELETE
             new_req.updates.add().CopyFrom(update)
