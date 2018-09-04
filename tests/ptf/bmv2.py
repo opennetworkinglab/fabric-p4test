@@ -28,20 +28,20 @@ SWITCH_START_TIMEOUT = 5
 
 logger = logging.getLogger("BMv2 switch")
 
+
 def get_stratum_root():
     if 'STRATUM_ROOT' in os.environ:
         return os.environ['STRATUM_ROOT']
     else:
         return '/home/sdn/stratum'
-    # Fallback
-    print("STRATUM_ROOT is not defined")
-    sys.exit(1)
+
 
 STRATUM_ROOT = get_stratum_root()
 STRATUM_BINARY = STRATUM_ROOT + '/bazel-bin/stratum/hal/bin/bmv2/stratum_bmv2'
 STRATUM_CONFIG_DIR = '/tmp/stratum-bmv2'
 STRATUM_LD_PATH = 'LD_LIBRARY_PATH=/home/sdn/bmv2_install/lib'
 INITIAL_PIPELINE = STRATUM_ROOT + '/stratum/hal/bin/bmv2/dummy.json'
+
 
 def check_bmv2_target(target):
     try:
@@ -91,7 +91,7 @@ class Bmv2Switch:
             '--initial_pipeline=' + INITIAL_PIPELINE,
             '--cpu_port=%s' % self.cpu_port,
             '--url=0.0.0.0:%s' % self.grpc_port,
-            ]
+        ]
         for port, intf in port_map.items():
             args.append('%d@%s' % (port, intf))
 
