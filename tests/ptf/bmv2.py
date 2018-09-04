@@ -28,6 +28,20 @@ SWITCH_START_TIMEOUT = 5
 
 logger = logging.getLogger("BMv2 switch")
 
+def get_stratum_root():
+    if 'STRATUM_ROOT' in os.environ:
+        return os.environ['STRATUM_ROOT']
+    else:
+        return '/home/sdn/stratum'
+    # Fallback
+    print("STRATUM_ROOT is not defined")
+    sys.exit(1)
+
+STRATUM_ROOT = get_stratum_root()
+STRATUM_BINARY = STRATUM_ROOT + '/bazel-bin/stratum/hal/bin/bmv2/stratum_bmv2'
+STRATUM_CONFIG_DIR = '/tmp/stratum-bmv2'
+STRATUM_LD_PATH = 'LD_LIBRARY_PATH=/home/sdn/bmv2_install/lib'
+INITIAL_PIPELINE = STRATUM_ROOT + '/stratum/hal/bin/bmv2/dummy.json'
 
 def check_bmv2_target(target):
     try:
@@ -54,7 +68,7 @@ def watchdog(sw):
 
 
 class Bmv2Switch:
-    def __init__(self, device_id, port_map_path, grpc_port, cpu_port, loglevel='warn'):
+    def __init__(self, device_id, port_map_path, grpc_port, cpu_port, loglevel='warn', is_stratum=False):
         self.device_id = device_id
         self.port_map_path = port_map_path
         self.grpc_port = int(grpc_port)
@@ -63,19 +77,28 @@ class Bmv2Switch:
         self.logfile = '%s.log' % BMV2_RUNTIME_FILE_PATH_PREFIX
         self.logfd = None
         self.bmv2popen = None
+        self.is_stratum = is_stratum
 
         if not check_bmv2_target(BMV2_TARGET_EXE):
             raise Exception("%s executable not found" % BMV2_TARGET_EXE)
 
-    def start(self):
-        port_map = {}
-        with open(self.port_map_path, 'r') as port_map_f:
-            port_list = json.load(port_map_f)
-            for entry in port_list:
-                p4_port = entry["p4_port"]
-                iface_name = entry["iface_name"]
-                port_map[p4_port] = iface_name
+    def get_stratum_cmd(self, port_map):
+        args = [
+            STRATUM_BINARY,
+            '--device_id=%s' % str(self.device_id),
+            '--forwarding_pipeline_configs_file=%s/config.txt' % STRATUM_CONFIG_DIR,
+            '--persistent_config_dir=' + STRATUM_CONFIG_DIR,
+            '--initial_pipeline=' + INITIAL_PIPELINE,
+            '--cpu_port=%s' % self.cpu_port,
+            '--url=0.0.0.0:%s' % self.grpc_port,
+            ]
+        for port, intf in port_map.items():
+            args.append('%d@%s' % (port, intf))
 
+        cmdString = " ".join(args)
+        return cmdString
+
+    def get_cmd(self, port_map):
         bmv2_args = ['--device-id %s' % str(self.device_id)]
         for p4_port, intf_name in port_map.items():
             bmv2_args.append('-i %d@%s' % (p4_port, intf_name))
@@ -91,13 +114,30 @@ class Bmv2Switch:
         bmv2_args.append('--grpc-server-addr 0.0.0.0:%s' % str(self.grpc_port))
 
         cmdString = " ".join([BMV2_TARGET_EXE] + bmv2_args)
+        return cmdString
+
+    def start(self):
+        port_map = {}
+        with open(self.port_map_path, 'r') as port_map_f:
+            port_list = json.load(port_map_f)
+            for entry in port_list:
+                p4_port = entry["p4_port"]
+                iface_name = entry["iface_name"]
+                port_map[p4_port] = iface_name
+
+        if self.is_stratum is True:
+            cmdString = self.get_stratum_cmd(port_map)
+            ld_path = STRATUM_LD_PATH + " "
+        else:
+            cmdString = self.get_cmd(port_map)
+            ld_path = ""
 
         logger.info("\nStarting BMv2... %s\n" % cmdString)
 
         # Start the switch
         try:
             self.logfd = open(self.logfile, "w")
-            self.bmv2popen = subprocess.Popen("exec " + cmdString,
+            self.bmv2popen = subprocess.Popen(ld_path + "exec " + cmdString,
                                               stdout=self.logfd,
                                               stderr=self.logfd,
                                               shell=True)

@@ -226,7 +226,7 @@ def main():
     parser.add_argument('--device',
                         help='Target device',
                         type=str, action="store", required=True,
-                        choices=['tofino', 'bmv2'])
+                        choices=['tofino', 'bmv2', 'stratum-bmv2'])
     parser.add_argument('--p4info',
                         help='Location of p4info proto in text format',
                         type=str, action="store", required=True)
@@ -287,7 +287,7 @@ def main():
             sys.exit(1)
         tofino_bin = args.tofino_bin
         tofino_ctx_json = args.tofino_ctx_json
-    elif device == 'bmv2':
+    elif device == 'bmv2' or device == 'stratum-bmv2':
         if not os.path.exists(args.bmv2_json):
             error("BMv2 json file {} not found".format(args.bmv2_json))
             sys.exit(1)
@@ -305,6 +305,14 @@ def main():
                              grpc_port=grpc_port,
                              cpu_port=args.cpu_port,
                              loglevel='debug')
+        bmv2_sw.start()
+    elif device == 'stratum-bmv2':
+        bmv2_sw = Bmv2Switch(device_id=args.device_id,
+                             port_map_path=args.port_map,
+                             grpc_port=grpc_port,
+                             cpu_port=args.cpu_port,
+                             loglevel='debug',
+                             is_stratum=True)
         bmv2_sw.start()
 
     try:
