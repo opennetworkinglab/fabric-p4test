@@ -68,7 +68,8 @@ def watchdog(sw):
 
 
 class Bmv2Switch:
-    def __init__(self, device_id, port_map_path, grpc_port, cpu_port, loglevel='warn', is_stratum=False):
+    def __init__(self, device_id, port_map_path, grpc_port, cpu_port,
+                 loglevel='warn', is_stratum=False, debugger=False):
         self.device_id = device_id
         self.port_map_path = port_map_path
         self.grpc_port = int(grpc_port)
@@ -78,6 +79,7 @@ class Bmv2Switch:
         self.logfd = None
         self.bmv2popen = None
         self.is_stratum = is_stratum
+        self.debugger = debugger
 
         if not check_bmv2_target(BMV2_TARGET_EXE):
             raise Exception("%s executable not found" % BMV2_TARGET_EXE)
@@ -102,8 +104,9 @@ class Bmv2Switch:
         bmv2_args = ['--device-id %s' % str(self.device_id)]
         for p4_port, intf_name in port_map.items():
             bmv2_args.append('-i %d@%s' % (p4_port, intf_name))
-        dbgaddr = 'ipc://%s-debug.ipc' % BMV2_RUNTIME_FILE_PATH_PREFIX
-        bmv2_args.append('--debugger-addr %s' % dbgaddr)
+        if self.debugger:
+            dbgaddr = 'ipc://%s-debug.ipc' % BMV2_RUNTIME_FILE_PATH_PREFIX
+            bmv2_args.append('--debugger-addr %s' % dbgaddr)
         bmv2_args.append('--log-console')
         bmv2_args.append('-L%s' % self.loglevel)
         bmv2_args.append('--no-p4')
