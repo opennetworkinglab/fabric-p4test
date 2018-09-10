@@ -566,10 +566,10 @@ class P4RuntimeTest(BaseTest):
         table_entry = update.entity.table_entry
         table_entry.table_id = self.get_table_id(t_name)
         table_entry.priority = priority
-        if mk is not None:
-            self.set_match_key(table_entry, t_name, mk)
-        else:
+        if mk is None or len(mk) == 0:
             table_entry.is_default_action = True
+        else:
+            self.set_match_key(table_entry, t_name, mk)
         self.set_action_entry(table_entry, a_name, params)
 
     def send_request_add_entry_to_action(self, t_name, mk, a_name, params, priority=0):
