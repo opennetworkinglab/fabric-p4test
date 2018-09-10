@@ -460,14 +460,14 @@ class FabricIntSourceTest(IntTest):
         print ""
         for vlan_conf, tagged in vlan_confs.items():
             for pkt_type in ["udp", "tcp"]:
-                    for instructions in instr_sets:
-                        print "Testing VLAN=%s, pkt=%s, instructions=%s..." \
-                              % (vlan_conf, pkt_type, ",".join(
-                            [INT_INS_TO_NAME[i] for i in instructions]))
-                        pkt = getattr(testutils, "simple_%s_packet" % pkt_type)()
-                        self.doRunTest(pkt=pkt, instructions=instructions,
-                                       with_transit=False, ignore_csum=True,
-                                       tagged1=tagged[0], tagged2=tagged[1])
+                for instructions in instr_sets:
+                    print "Testing VLAN=%s, pkt=%s, instructions=%s..." \
+                          % (vlan_conf, pkt_type, ",".join(
+                        [INT_INS_TO_NAME[i] for i in instructions]))
+                    pkt = getattr(testutils, "simple_%s_packet" % pkt_type)()
+                    self.doRunTest(pkt=pkt, instructions=instructions,
+                                   with_transit=False, ignore_csum=True,
+                                   tagged1=tagged[0], tagged2=tagged[1])
 
 
 @group("int")
