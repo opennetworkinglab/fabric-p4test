@@ -570,7 +570,6 @@ class P4RuntimeTest(BaseTest):
             table_entry.is_default_action = True
         else:
             update.type = p4runtime_pb2.Update.INSERT
-            self.set_match_key(table_entry, t_name, mk)
         self.set_action_entry(table_entry, a_name, params)
 
     def send_request_add_entry_to_action(self, t_name, mk, a_name, params, priority=0):

@@ -608,18 +608,7 @@ class IntTest(IPv4UnicastTest):
         self.send_request_add_entry_to_action(
             "tb_int_insert",
             [],
-            "int_transit", [("switch_id", stringify(switch_id, 4))])
-
-        for inst_mask in ("0003", "0407"):
-            req = self.get_new_write_request()
-            for i in xrange(16):
-                base = "int_set_header_%s_i" % inst_mask
-                mf = self.Exact("hdr.int_header.instruction_mask_" + inst_mask,
-                                stringify(i, 1))
-                action = base + str(i)
-                self.push_update_add_entry_to_action(
-                    req, "tb_int_inst_" + inst_mask, [mf], action, [])
-            self.write_request(req)
+            "init_metadata", [("switch_id", stringify(switch_id, 4))])
 
     def setup_source_port(self, source_port):
         source_port_ = stringify(source_port, 2)

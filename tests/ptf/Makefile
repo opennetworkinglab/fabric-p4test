@@ -26,7 +26,7 @@ endif
 
 fabric-int:
 ifndef TEST
-	$(eval TEST = all ^spgw)
+	$(eval TEST = all ^spgw ^int-full)
 endif
 	${PTF_BMV2_CMD} \
 		--p4info ${FABRIC_INT_OUT}/p4info.txt \
