@@ -223,11 +223,14 @@ class FabricTest(P4RuntimeTest):
 
     def add_forwarding_routing_v4_entry(self, ipv4_dstAddr, ipv4_pLen,
                                         next_id):
-        ipv4_dstAddr_ = ipv4_to_binary(ipv4_dstAddr)
         next_id_ = stringify(next_id, 4)
+        if ipv4_pLen > 0:
+            ipv4_dstAddr_ = ipv4_to_binary(ipv4_dstAddr)
+            mk = [self.Lpm("hdr.ipv4.dst_addr", ipv4_dstAddr_, ipv4_pLen)]
+        else:
+            mk = None
         self.send_request_add_entry_to_action(
-            "forwarding.routing_v4",
-            [self.Lpm("hdr.ipv4.dst_addr", ipv4_dstAddr_, ipv4_pLen)],
+            "forwarding.routing_v4", mk,
             "forwarding.set_next_id_routing_v4", [("next_id", next_id_)])
 
     def add_forwarding_acl_cpu_entry(self, eth_type=None, clone=False):
@@ -438,12 +441,15 @@ class IPv4UnicastTest(FabricTest):
                                  FORWARDING_TYPE_UNICAST_IPV4)
         self.set_forwarding_type(self.port2, switch_mac, 0x800,
                                  FORWARDING_TYPE_UNICAST_IPV4)
-        self.add_forwarding_routing_v4_entry(src_ipv4, prefix_len, next_id1)
         self.add_forwarding_routing_v4_entry(dst_ipv4, prefix_len, next_id2)
-        self.add_next_hop_L3(next_id1, self.port1, switch_mac, src_mac)
+        if bidirectional:
+            self.add_forwarding_routing_v4_entry(src_ipv4, prefix_len, next_id1)
         self.add_next_hop_L3(next_id2, self.port2, switch_mac, dst_mac)
-        self.add_vlan_meta(next_id1, vlan1)
+        if bidirectional:
+            self.add_next_hop_L3(next_id1, self.port1, switch_mac, src_mac)
         self.add_vlan_meta(next_id2, vlan2)
+        if bidirectional:
+            self.add_vlan_meta(next_id1, vlan1)
 
         if exp_pkt is None:
             exp_pkt = pkt.copy()
@@ -633,7 +639,8 @@ class IntTest(IPv4UnicastTest):
                 instructions.append(ins)
         return instructions
 
-    def get_int_pkt(self, pkt, instructions, max_hop, transit_hops=0, hop_metadata=None):
+    def get_int_pkt(self, pkt, instructions, max_hop, transit_hops=0,
+                    hop_metadata=None):
         proto = UDP if UDP in pkt else TCP
         int_pkt = pkt.copy()
         int_pkt[IP].tos = 0x04
@@ -644,7 +651,8 @@ class IntTest(IPv4UnicastTest):
             max_hop_cnt=max_hop,
             total_hop_cnt=transit_hops,
             inst_mask=self.get_ins_mask(instructions))
-        int_tail = INT_L45_TAIL(next_proto=pkt[IP].proto, proto_param=pkt[proto].dport)
+        int_tail = INT_L45_TAIL(next_proto=pkt[IP].proto,
+                                proto_param=pkt[proto].dport)
         metadata = "".join([hop_metadata] * transit_hops)
         int_payload = int_shim / int_header / metadata / int_tail
         int_pkt[proto].payload = int_payload / int_pkt[proto].payload
@@ -662,7 +670,8 @@ class IntTest(IPv4UnicastTest):
         int_metadata += "".join(["\x00\x00\x00\x00"] * masked_ins_cnt)
         return int_metadata, masked_ins_cnt
 
-    def setup_source_flow(self, ipv4_src, ipv4_dst, sport, dport, instructions, max_hop):
+    def setup_source_flow(self, ipv4_src, ipv4_dst, sport, dport, instructions,
+                          max_hop):
         ipv4_src_ = ipv4_to_binary(ipv4_src)
         ipv4_dst_ = ipv4_to_binary(ipv4_dst)
         ipv4_mask = ipv4_to_binary("255.255.255.255")
@@ -750,7 +759,8 @@ class IntTest(IPv4UnicastTest):
                 offset_metadata = len(exp_pkt) - len(exp_pkt[proto].payload) \
                                   + len(INT_L45_HEAD()) + len(INT_META_HDR()) \
                                   + (ins_cnt - masked_ins_cnt) * 4
-                mask_pkt.set_do_not_care(offset_metadata * 8, masked_ins_cnt * 4 * 8)
+                mask_pkt.set_do_not_care(offset_metadata * 8,
+                                         masked_ins_cnt * 4 * 8)
             if ignore_csum:
                 csum_offset = len(exp_pkt) - len(exp_pkt[IP].payload) \
                               + (6 if proto is UDP else 16)
@@ -792,7 +802,8 @@ class IntTest(IPv4UnicastTest):
         exp_pkt = pkt.copy()
         exp_pkt[INT_L45_HEAD].length += pkt[INT_META_HDR].ins_cnt
         exp_pkt[INT_META_HDR].total_hop_cnt += 1
-        exp_pkt[INT_META_HDR].payload = new_metadata + str(exp_pkt[INT_META_HDR].payload)
+        exp_pkt[INT_META_HDR].payload = new_metadata + str(
+            exp_pkt[INT_META_HDR].payload)
 
         exp_pkt[Ether].src = exp_pkt[Ether].dst
         exp_pkt[Ether].dst = dst_mac
@@ -812,9 +823,11 @@ class IntTest(IPv4UnicastTest):
                 offset_metadata = len(exp_pkt) - len(exp_pkt[proto].payload) \
                                   + len(INT_L45_HEAD()) + len(INT_META_HDR()) \
                                   + (ins_cnt - masked_ins_cnt) * 4
-                mask_pkt.set_do_not_care(offset_metadata * 8, masked_ins_cnt * 4 * 8)
+                mask_pkt.set_do_not_care(offset_metadata * 8,
+                                         masked_ins_cnt * 4 * 8)
             exp_pkt = mask_pkt
 
         self.runIPv4UnicastTest(pkt=pkt, dst_mac=HOST2_MAC,
                                 tagged1=tagged1, tagged2=tagged2,
-                                prefix_len=32, exp_pkt=exp_pkt, bidirectional=False)
+                                prefix_len=32, exp_pkt=exp_pkt,
+                                bidirectional=False)
