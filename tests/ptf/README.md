@@ -35,6 +35,8 @@ The available profiles are:
 | -------------| -----------------------|-------------|
 | `fabric` | *None* | Basic fabric profile |
 | `fabric-spgw`| `-DWITH_SPGW` | With SPGW user plane functionality |
+| `fabric-int`| `-DWITH_INT_SOURCE` `-DWITH_INT_TRANSIT` | With INT (spec v0.5) source and transit functionality  |
+| `fabric-spgw-int`| `-DWITH_SPGW` `-DWITH_INT_SOURCE` `-DWITH_INT_TRANSIT` | With both SPGW and INT functionalities |
 
 ### Compiling fabric.p4 for BMv2
 
@@ -156,8 +158,10 @@ preprocessor flags as per this table:
 
 | Profile | PTF test specs |
 | ------- | -------------- |
-| `fabric` | `all ^spgw` |
-| `fabric-spgw` | `all` |
+| `fabric` | `all ^spgw ^int` |
+| `fabric-spgw` | `all ^int` |
+| `fabric-int` | `all ^spgw` |
+| `fabric-spgw-int` | `all` |
 
 For an example of how PTF test specs are used, you can refer to [this
 Makefile](./Makefile) used for BMv2 tests.

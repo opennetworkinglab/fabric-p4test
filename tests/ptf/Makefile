@@ -3,8 +3,9 @@ BASE_P4C_OUT_PATH = ${ONOS_ROOT}/pipelines/fabric/src/main/resources/p4c-out
 FABRIC_OUT = ${BASE_P4C_OUT_PATH}/fabric/bmv2/default
 FABRIC_SPGW_OUT = ${BASE_P4C_OUT_PATH}/fabric-spgw/bmv2/default
 FABRIC_INT_OUT = ${BASE_P4C_OUT_PATH}/fabric-int/bmv2/default
+FABRIC_SPGW_INT_OUT = ${BASE_P4C_OUT_PATH}/fabric-spgw-int/bmv2/default
 
-all: fabric fabric-spgw fabric-int
+all: fabric fabric-spgw fabric-int fabric-spgw-int
 
 fabric:
 ifndef TEST
@@ -22,6 +23,15 @@ endif
 	${PTF_BMV2_CMD} \
 		--p4info ${FABRIC_SPGW_OUT}/p4info.txt \
 		--bmv2-json ${FABRIC_SPGW_OUT}/bmv2.json \
+		${TEST}
+
+fabric-spgw-int:
+ifndef TEST
+	$(eval TEST = all ^int-full)
+endif
+	${PTF_BMV2_CMD} \
+		--p4info ${FABRIC_SPGW_INT_OUT}/p4info.txt \
+		--bmv2-json ${FABRIC_SPGW_INT_OUT}/bmv2.json \
 		${TEST}
 
 fabric-int:
