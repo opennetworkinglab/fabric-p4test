@@ -19,6 +19,7 @@ from operator import ior
 from p4.v1 import p4runtime_pb2
 from ptf import testutils as testutils
 from ptf.mask import Mask
+from scapy.contrib.mpls import MPLS
 from scapy.layers.inet import IP, UDP, TCP
 from scapy.layers.l2 import Ether, Dot1Q
 
@@ -51,9 +52,12 @@ INT_L45_TAIL = xnt.INT_L45_TAIL
 
 MAC_MASK = ":".join(["ff"] * 6)
 SWITCH_MAC = "00:00:00:00:aa:01"
+SWITCH_IPV4 = "192.168.0.1"
+
 HOST1_MAC = "00:00:00:00:00:01"
 HOST2_MAC = "00:00:00:00:00:02"
 HOST3_MAC = "00:00:00:00:00:03"
+
 HOST1_IPV4 = "10.0.1.1"
 HOST2_IPV4 = "10.0.2.1"
 HOST3_IPV4 = "10.0.3.1"
@@ -64,6 +68,11 @@ UE_IPV4 = "16.255.255.252"
 
 VLAN_ID_1 = 100
 VLAN_ID_2 = 200
+DEFAULT_VLAN = 4094
+
+MPLS_LABEL_2 = 200
+
+TEID_1 = 0xeeffc0f0
 
 # INT instructions
 INT_SWITCH_ID = 1 << 15
@@ -113,6 +122,22 @@ def pkt_add_vlan(pkt, vlan_vid=10, vlan_pcp=0, dl_vlan_cfi=0):
     return Ether(src=pkt[Ether].src, dst=pkt[Ether].dst) / \
            Dot1Q(prio=vlan_pcp, id=dl_vlan_cfi, vlan=vlan_vid) / \
            pkt[Ether].payload
+
+
+def pkt_add_mpls(pkt, label, ttl, cos=0, s=1):
+    return Ether(src=pkt[Ether].src, dst=pkt[Ether].dst) / \
+           MPLS(label=label, cos=cos, s=s, ttl=ttl) / \
+           pkt[Ether].payload
+
+
+def pkt_add_gtp(pkt, out_ipv4_src, out_ipv4_dst, teid):
+    payload = pkt[Ether].payload
+    return Ether(src=pkt[Ether].src, dst=pkt[Ether].dst) / \
+           IP(src=out_ipv4_src, dst=out_ipv4_dst, tos=0,
+              id=0x1513, flags=0, frag=0) / \
+           UDP(sport=UDP_GTP_PORT, dport=UDP_GTP_PORT, chksum=0) / \
+           make_gtp(len(payload), teid) / \
+           payload
 
 
 def pkt_decrement_ttl(pkt):
@@ -420,38 +445,67 @@ class ArpBroadcastTest(FabricTest):
 class IPv4UnicastTest(FabricTest):
     def runIPv4UnicastTest(self, pkt, dst_mac,
                            tagged1=False, tagged2=False, prefix_len=24,
-                           exp_pkt=None, bidirectional=True):
+                           exp_pkt=None, bidirectional=True, mpls=False,
+                           src_ipv4=None, dst_ipv4=None):
         if IP not in pkt or Ether not in pkt:
             self.fail("Cannot do IPv4 test with packet that is not IP")
+        if mpls and bidirectional:
+            self.fail("Cannot do bidirectional test with MPLS")
+        if mpls and tagged2:
+            self.fail("Cannot do MPLS test with egress port tagged (tagged2)")
+
         vlan1 = VLAN_ID_1
         vlan2 = VLAN_ID_2
         next_id1 = 10
         next_id2 = 20
-        src_ipv4 = pkt[IP].src
-        dst_ipv4 = pkt[IP].dst
+        group_id2 = 22
+        label2 = MPLS_LABEL_2
+        if src_ipv4 is None:
+            src_ipv4 = pkt[IP].src
+        if dst_ipv4 is None:
+            dst_ipv4 = pkt[IP].dst
         src_mac = pkt[Ether].src
         switch_mac = pkt[Ether].dst
 
+        # Setup ports. If MPLS test, port2 is assumed to be a spine port, with
+        # default vlan untagged.
         self.setup_port(self.port1, vlan1, tagged1)
-        self.setup_port(self.port2, vlan2, tagged2)
+        if not mpls:
+            self.setup_port(self.port2, vlan2, tagged2)
+        else:
+            self.setup_port(self.port2, DEFAULT_VLAN, False)
+        # Forwarding type -> routing v4
         self.set_forwarding_type(self.port1, switch_mac, 0x800,
                                  FORWARDING_TYPE_UNICAST_IPV4)
-        self.set_forwarding_type(self.port2, switch_mac, 0x800,
-                                 FORWARDING_TYPE_UNICAST_IPV4)
-        self.add_forwarding_routing_v4_entry(src_ipv4, prefix_len, next_id1)
+        if bidirectional:
+            self.set_forwarding_type(self.port2, switch_mac, 0x800,
+                                     FORWARDING_TYPE_UNICAST_IPV4)
+        # Routing entry.
         self.add_forwarding_routing_v4_entry(dst_ipv4, prefix_len, next_id2)
-        self.add_next_hop_L3(next_id1, self.port1, switch_mac, src_mac)
-        self.add_next_hop_L3(next_id2, self.port2, switch_mac, dst_mac)
-        self.add_vlan_meta(next_id1, vlan1)
-        self.add_vlan_meta(next_id2, vlan2)
+        if bidirectional:
+            self.add_forwarding_routing_v4_entry(src_ipv4, prefix_len, next_id1)
+
+        if not mpls:
+            self.add_next_hop_L3(next_id2, self.port2, switch_mac, dst_mac)
+            self.add_vlan_meta(next_id2, vlan2)
+            if bidirectional:
+                self.add_next_hop_L3(next_id1, self.port1, switch_mac, src_mac)
+                self.add_vlan_meta(next_id1, vlan1)
+        else:
+            params2 = [self.port2, switch_mac, dst_mac, label2]
+            self.add_next_hop_mpls_v4_group(next_id2, group_id2, {1: params2})
+            self.add_vlan_meta(next_id2, DEFAULT_VLAN)
 
         if exp_pkt is None:
             exp_pkt = pkt.copy()
             exp_pkt[Ether].src = switch_mac
             exp_pkt[Ether].dst = dst_mac
-            exp_pkt[IP].ttl = exp_pkt[IP].ttl - 1
+            if not mpls:
+                exp_pkt[IP].ttl = exp_pkt[IP].ttl - 1
             if tagged2:
                 exp_pkt = pkt_add_vlan(exp_pkt, vlan_vid=vlan2)
+            if mpls:
+                exp_pkt = pkt_add_mpls(exp_pkt, label=label2, ttl=DEFAULT_MPLS_TTL)
 
         pkt2 = pkt.copy()
         pkt2[Ether].src = dst_mac
@@ -510,98 +564,86 @@ class PacketInTest(FabricTest):
         testutils.verify_no_other_packets(self)
 
 
-class SpgwTest(FabricTest):
-    def setUp(self):
-        super(SpgwTest, self).setUp()
-        self.SWITCH_MAC_1 = "c2:42:59:2d:3a:84"
-        self.SWITCH_MAC_2 = "3a:c1:e2:53:e1:50"
-        self.DMAC_1 = "52:54:00:05:7b:59"
-        self.DMAC_2 = "52:54:00:29:c9:b7"
+class SpgwSimpleTest(IPv4UnicastTest):
 
-        self.set_forwarding_type(self.port1, self.SWITCH_MAC_1, 0x800,
-                                 FORWARDING_TYPE_UNICAST_IPV4)
-        self.set_forwarding_type(self.port2, self.SWITCH_MAC_2, 0x800,
-                                 FORWARDING_TYPE_UNICAST_IPV4)
-
-
-class SpgwMPLSTest(SpgwTest):
-    def setUp(self):
-        super(SpgwMPLSTest, self).setUp()
-
-        self.mpls_label = 204
-
-        # internal vlan required for MPLS
-        self.set_ingress_port_vlan(self.port1, vlan_valid=False,
-                                   vlan_id=0, new_vlan_id=4094)
-        self.set_ingress_port_vlan(self.port2, vlan_valid=False,
-                                   vlan_id=0, new_vlan_id=20)
-        self.add_forwarding_routing_v4_entry(S1U_ENB_IPV4, 32, 1)
-        self.add_forwarding_routing_v4_entry(UE_IPV4, 32, 2)
-        self.add_next_hop_L3(1, self.port2, self.SWITCH_MAC_2, self.DMAC_2)
-        self.add_next_hop_mpls_v4(2, self.port1, self.SWITCH_MAC_1, self.DMAC_1,
-                                  self.mpls_label)
-        self.set_egress_vlan_pop(self.port1, 20)
-        self.set_egress_vlan_pop(self.port2, 4094)
-
+    def setup_uplink(self, s1u_sgw_ipv4):
         req = self.get_new_write_request()
-        s1u_enb_ipv4_ = ipv4_to_binary(S1U_ENB_IPV4)
-        s1u_sgw_ipv4_ = ipv4_to_binary(S1U_SGW_IPV4)
-        end_point_ipv4_ = ipv4_to_binary(UE_IPV4)
+        s1u_sgw_ipv4_ = ipv4_to_binary(s1u_sgw_ipv4)
         self.push_update_add_entry_to_action(
             req,
             "spgw_ingress.s1u_filter_table",
             [self.Exact("gtpu_ipv4.dst_addr", s1u_sgw_ipv4_)],
             "NoAction", [])
-        self.push_update_add_entry_to_action(
-            req,
-            "spgw_ingress.dl_sess_lookup",
-            [self.Exact("ipv4.dst_addr", end_point_ipv4_)],
-            "spgw_ingress.set_dl_sess_info",
-            [("teid", stringify(1, 4)), ("s1u_enb_addr", s1u_enb_ipv4_),
-             ("s1u_sgw_addr", s1u_sgw_ipv4_)])
         self.write_request(req)
 
-
-class SpgwSimpleTest(SpgwTest):
-    def setUp(self):
-        super(SpgwSimpleTest, self).setUp()
-
-        vlan_id = 10
-        self.set_ingress_port_vlan(self.port1, False, 0, vlan_id)
-        self.set_ingress_port_vlan(self.port2, False, 0, vlan_id)
-
-        self.add_forwarding_routing_v4_entry(S1U_ENB_IPV4, 32, 1)
-        self.add_forwarding_routing_v4_entry(UE_IPV4, 32, 2)
-        self.add_next_hop_L3(1, self.port2, self.SWITCH_MAC_2, self.DMAC_2)
-        self.add_next_hop_L3(2, self.port1, self.SWITCH_MAC_1, self.DMAC_1)
-
-        self.set_egress_vlan_pop(self.port1, vlan_id)
-        self.set_egress_vlan_pop(self.port2, vlan_id)
-
+    def setup_downlink(self, s1u_sgw_ipv4, s1u_enb_ipv4, ue_ipv4, teid):
         req = self.get_new_write_request()
-        s1u_enb_ipv4_ = ipv4_to_binary(S1U_ENB_IPV4)
-        s1u_sgw_ipv4_ = ipv4_to_binary(S1U_SGW_IPV4)
-        end_point_ipv4_ = ipv4_to_binary(UE_IPV4)
-        self.push_update_add_entry_to_action(
-            req,
-            "spgw_ingress.s1u_filter_table",
-            [self.Exact("gtpu_ipv4.dst_addr", s1u_sgw_ipv4_)],
-            "NoAction", [])
+        s1u_enb_ipv4_ = ipv4_to_binary(s1u_enb_ipv4)
+        s1u_sgw_ipv4_ = ipv4_to_binary(s1u_sgw_ipv4)
+        end_point_ipv4_ = ipv4_to_binary(ue_ipv4)
+        teid_ = stringify(teid, 4)
         self.push_update_add_entry_to_action(
             req,
             "spgw_ingress.dl_sess_lookup",
             [self.Exact("ipv4.dst_addr", end_point_ipv4_)],
             "spgw_ingress.set_dl_sess_info",
-            [("teid", stringify(1, 4)), ("s1u_enb_addr", s1u_enb_ipv4_),
+            [("teid", teid_), ("s1u_enb_addr", s1u_enb_ipv4_),
              ("s1u_sgw_addr", s1u_sgw_ipv4_)])
         self.write_request(req)
+
+    def runUplinkTest(self, ue_out_pkt, tagged1, tagged2, mpls):
+
+        dst_mac = HOST2_MAC
+
+        self.setup_uplink(S1U_SGW_IPV4)
+
+        gtp_pkt = pkt_add_gtp(ue_out_pkt, out_ipv4_src=S1U_ENB_IPV4,
+                              out_ipv4_dst=S1U_SGW_IPV4, teid=TEID_1)
+        exp_pkt = ue_out_pkt.copy()
+        exp_pkt[Ether].src = exp_pkt[Ether].dst
+        exp_pkt[Ether].dst = dst_mac
+        if not mpls:
+            exp_pkt[IP].ttl = exp_pkt[IP].ttl - 1
+        else:
+            exp_pkt = pkt_add_mpls(exp_pkt, MPLS_LABEL_2, DEFAULT_MPLS_TTL)
+        if tagged2:
+            exp_pkt = pkt_add_vlan(exp_pkt, VLAN_ID_2)
+
+        self.runIPv4UnicastTest(pkt=gtp_pkt, src_ipv4=ue_out_pkt[IP].src,
+                                dst_ipv4=ue_out_pkt[IP].dst, dst_mac=dst_mac,
+                                prefix_len=32, exp_pkt=exp_pkt, bidirectional=False,
+                                tagged1=tagged1, tagged2=tagged2, mpls=mpls)
+
+    def runDownlinkTest(self, pkt, tagged1, tagged2, mpls):
+
+        dst_mac = HOST2_MAC
+        ue_ipv4 = pkt[IP].dst
+
+        self.setup_downlink(S1U_SGW_IPV4, S1U_ENB_IPV4, ue_ipv4, TEID_1)
+
+        exp_pkt = pkt.copy()
+
+        exp_pkt[Ether].src = exp_pkt[Ether].dst
+        exp_pkt[Ether].dst = dst_mac
+        if not mpls:
+            exp_pkt[IP].ttl = exp_pkt[IP].ttl - 1
+        exp_pkt = pkt_add_gtp(exp_pkt, out_ipv4_src=S1U_SGW_IPV4,
+                              out_ipv4_dst=S1U_ENB_IPV4, teid=TEID_1)
+        if mpls:
+            exp_pkt = pkt_add_mpls(exp_pkt, MPLS_LABEL_2, DEFAULT_MPLS_TTL)
+        if tagged2:
+            exp_pkt = pkt_add_vlan(exp_pkt, VLAN_ID_2)
+
+        self.runIPv4UnicastTest(pkt=pkt, dst_mac=dst_mac,
+                                prefix_len=32, exp_pkt=exp_pkt, bidirectional=False,
+                                tagged1=tagged1, tagged2=tagged2, mpls=mpls)
 
 
 class IntTest(IPv4UnicastTest):
     def setup_transit(self, switch_id):
         self.send_request_add_entry_to_action(
             "tb_int_insert",
-            [],
+            [self.Exact("hdr.int_header.is_valid", stringify(1, 1))],
             "init_metadata", [("switch_id", stringify(switch_id, 4))])
 
     def setup_source_port(self, source_port):
@@ -686,7 +728,7 @@ class IntTest(IPv4UnicastTest):
 
     def runIntSourceTest(self, pkt, tagged1, tagged2, instructions,
                          with_transit=True, ignore_csum=False, switch_id=1,
-                         max_hop=5):
+                         max_hop=5, mpls=False):
         if IP not in pkt:
             self.fail("Packet is not IP")
         if UDP not in pkt and TCP not in pkt:
@@ -727,7 +769,10 @@ class IntTest(IPv4UnicastTest):
 
         exp_pkt[Ether].src = exp_pkt[Ether].dst
         exp_pkt[Ether].dst = dst_mac
-        exp_pkt[IP].ttl = exp_pkt[IP].ttl - 1
+        if not mpls:
+            exp_pkt[IP].ttl = exp_pkt[IP].ttl - 1
+        else:
+            exp_pkt = pkt_add_mpls(exp_pkt, MPLS_LABEL_2, DEFAULT_MPLS_TTL)
 
         if tagged2:
             # VLAN if tagged1 will be added by runIPv4UnicastTest
@@ -748,10 +793,10 @@ class IntTest(IPv4UnicastTest):
 
         self.runIPv4UnicastTest(pkt=pkt, dst_mac=HOST2_MAC, prefix_len=32,
                                 exp_pkt=exp_pkt, bidirectional=False,
-                                tagged1=tagged1, tagged2=tagged2)
+                                tagged1=tagged1, tagged2=tagged2, mpls=mpls)
 
     def runIntTransitTest(self, pkt, tagged1, tagged2,
-                          ignore_csum=False, switch_id=1):
+                          ignore_csum=False, switch_id=1, mpls=False):
         if IP not in pkt:
             self.fail("Packet is not IP")
         if UDP not in pkt and TCP not in pkt:
@@ -785,7 +830,10 @@ class IntTest(IPv4UnicastTest):
 
         exp_pkt[Ether].src = exp_pkt[Ether].dst
         exp_pkt[Ether].dst = dst_mac
-        exp_pkt[IP].ttl = exp_pkt[IP].ttl - 1
+        if not mpls:
+            exp_pkt[IP].ttl = exp_pkt[IP].ttl - 1
+        else:
+            exp_pkt = pkt_add_mpls(exp_pkt, MPLS_LABEL_2, DEFAULT_MPLS_TTL)
 
         if tagged2:
             # VLAN if tagged1 will be added by runIPv4UnicastTest
@@ -805,5 +853,5 @@ class IntTest(IPv4UnicastTest):
             exp_pkt = mask_pkt
 
         self.runIPv4UnicastTest(pkt=pkt, dst_mac=HOST2_MAC,
-                                tagged1=tagged1, tagged2=tagged2,
+                                tagged1=tagged1, tagged2=tagged2, mpls=mpls,
                                 prefix_len=32, exp_pkt=exp_pkt, bidirectional=False)
