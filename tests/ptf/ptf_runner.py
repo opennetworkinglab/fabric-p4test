@@ -72,6 +72,15 @@ def build_bmv2_config(bmv2_json_path):
     return device_config
 
 
+def build_spectrum_config(prog_name, bin_path):
+    device_config = p4config_pb2.P4DeviceConfig()
+    with open(bin_path, 'rb') as bin_f:
+        # binary blob already has a header prepended as a part of compilation 
+        device_config.device_data = bin_f.read()
+        
+    return device_config
+
+    
 def build_tofino_config(prog_name, bin_path, cxt_json_path):
     device_config = p4config_pb2.P4DeviceConfig()
     with open(bin_path, 'rb') as bin_f:
@@ -88,7 +97,7 @@ def build_tofino_config(prog_name, bin_path, cxt_json_path):
     return device_config
 
 
-def update_config(p4info_path, bmv2_json_path, tofino_bin_path,
+def update_config(p4info_path, bmv2_json_path, spectrum_bin_path, tofino_bin_path,
                   tofino_cxt_json_path, grpc_addr, device_id):
     """
     Performs a SetForwardingPipelineConfig on the device
@@ -136,6 +145,8 @@ def update_config(p4info_path, bmv2_json_path, tofino_bin_path,
             google.protobuf.text_format.Merge(p4info_f.read(), config.p4info)
         if bmv2_json_path is not None:
             device_config = build_bmv2_config(bmv2_json_path)
+	elif spectrum_bin_path is not None:
+	    device_config = build_spectrum_config("name", spectrum_bin_path)
         else:
             device_config = build_tofino_config("name", tofino_bin_path,
                                                 tofino_cxt_json_path)
@@ -226,12 +237,15 @@ def main():
     parser.add_argument('--device',
                         help='Target device',
                         type=str, action="store", required=True,
-                        choices=['tofino', 'bmv2', 'stratum-bmv2'])
+                        choices=['tofino', 'bmv2', 'stratum-bmv2', 'spectrum'])
     parser.add_argument('--p4info',
                         help='Location of p4info proto in text format',
                         type=str, action="store", required=True)
     parser.add_argument('--bmv2-json',
                         help='Location BMv2 JSON output from p4c (if target is bmv2)',
+                        type=str, action="store", required=False)
+    parser.add_argument('--spectrum-bin',
+                        help='Location of Spectrum .bin output from p4c (if target is spectrum)',
                         type=str, action="store", required=False)
     parser.add_argument('--tofino-bin',
                         help='Location of Tofino .bin output from p4c (if target is tofino)',
@@ -271,6 +285,7 @@ def main():
 
     device = args.device
     bmv2_json = None
+    spectrum_bin = None
     tofino_ctx_json = None
     tofino_bin = None
     if not os.path.exists(args.p4info):
@@ -287,6 +302,8 @@ def main():
             sys.exit(1)
         tofino_bin = args.tofino_bin
         tofino_ctx_json = args.tofino_ctx_json
+    elif device == 'spectrum':
+        spectrum_bin = args.spectrum_bin
     elif device == 'bmv2' or device == 'stratum-bmv2':
         if not os.path.exists(args.bmv2_json):
             error("BMv2 json file {} not found".format(args.bmv2_json))
@@ -322,6 +339,7 @@ def main():
         if not args.skip_config:
             success = update_config(p4info_path=args.p4info,
                                     bmv2_json_path=bmv2_json,
+                                    spectrum_bin_path=spectrum_bin,
                                     tofino_bin_path=tofino_bin,
                                     tofino_cxt_json_path=tofino_ctx_json,
                                     grpc_addr=args.grpc_addr,
