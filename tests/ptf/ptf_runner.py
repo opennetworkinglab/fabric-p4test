@@ -145,8 +145,8 @@ def update_config(p4info_path, bmv2_json_path, spectrum_bin_path, tofino_bin_pat
             google.protobuf.text_format.Merge(p4info_f.read(), config.p4info)
         if bmv2_json_path is not None:
             device_config = build_bmv2_config(bmv2_json_path)
-	elif spectrum_bin_path is not None:
-	    device_config = build_spectrum_config("name", spectrum_bin_path)
+        elif spectrum_bin_path is not None:
+            device_config = build_spectrum_config("name", spectrum_bin_path)
         else:
             device_config = build_tofino_config("name", tofino_bin_path,
                                                 tofino_cxt_json_path)
