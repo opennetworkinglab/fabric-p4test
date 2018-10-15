@@ -75,12 +75,12 @@ def build_bmv2_config(bmv2_json_path):
 def build_spectrum_config(prog_name, bin_path):
     device_config = p4config_pb2.P4DeviceConfig()
     with open(bin_path, 'rb') as bin_f:
-        # binary blob already has a header prepended as a part of compilation 
+        # binary blob already has a header prepended as a part of compilation
         device_config.device_data = bin_f.read()
-        
+
     return device_config
 
-    
+
 def build_tofino_config(prog_name, bin_path, cxt_json_path):
     device_config = p4config_pb2.P4DeviceConfig()
     with open(bin_path, 'rb') as bin_f:
