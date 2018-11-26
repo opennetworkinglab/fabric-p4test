@@ -450,6 +450,25 @@ class FabricIPv4MplsGroupTest(IPv4UnicastTest):
                 self.doRunTest(pkt, HOST2_MAC, tagged1)
 
 
+class FabricMplsSegmentRoutingTest(MplsSegmentRoutingTest):
+    @autocleanup
+    def doRunTest(self, pkt, mac_dest, next_hop_spine):
+        self.runMplsSegmentRoutingTest(pkt, mac_dest, next_hop_spine)
+
+    def runTest(self):
+        print ""
+        for pkt_type in ["tcp", "udp", "icmp"]:
+            for next_hop_spine in [True, False]:
+                print "Testing %s packet, next_hop_spine=%s..." \
+                      % (pkt_type, next_hop_spine)
+                pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
+                    eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
+                    ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4,
+                    pktlen=MIN_PKT_LEN
+                )
+                self.doRunTest(pkt, HOST2_MAC, next_hop_spine)
+
+
 @group("packetio")
 class FabricArpPacketOutTest(PacketOutTest):
     @autocleanup

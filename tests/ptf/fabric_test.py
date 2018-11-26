@@ -30,6 +30,7 @@ DEFAULT_PRIORITY = 10
 
 FORWARDING_TYPE_BRIDGING = 0
 FORWARDING_TYPE_UNICAST_IPV4 = 2
+FORWARDING_TYPE_MPLS = 1
 
 DEFAULT_MPLS_TTL = 64
 MIN_PKT_LEN = 80
@@ -38,6 +39,7 @@ UDP_GTP_PORT = 2152
 
 ETH_TYPE_ARP = 0x0806
 ETH_TYPE_IPV4 = 0x0800
+ETH_TYPE_MPLS_UNICAST = 0x8847
 
 # In case the "correct" version of scapy (from p4lang) is not installed, we
 # provide the INT header formats in xnt.py
@@ -70,6 +72,7 @@ VLAN_ID_1 = 100
 VLAN_ID_2 = 200
 DEFAULT_VLAN = 4094
 
+MPLS_LABEL_1 = 100
 MPLS_LABEL_2 = 200
 
 TEID_1 = 0xeeffc0f0
@@ -228,7 +231,7 @@ class FabricTest(P4RuntimeTest):
              self.Exact("eg_port", egress_port)],
             "egress_next.pop_vlan", [])
 
-    def set_forwarding_type(self, ingress_port, eth_dstAddr, ethertype=0x800,
+    def set_forwarding_type(self, ingress_port, eth_dstAddr, ethertype=ETH_TYPE_IPV4,
                             fwd_type=FORWARDING_TYPE_UNICAST_IPV4):
         ingress_port_ = stringify(ingress_port, 2)
         eth_dstAddr_ = mac_to_binary(eth_dstAddr)
@@ -266,6 +269,14 @@ class FabricTest(P4RuntimeTest):
             [self.Lpm("ipv4_dst", ipv4_dstAddr_, ipv4_pLen)],
             "forwarding.set_next_id_routing_v4", [("next_id", next_id_)])
 
+    def add_forwarding_mpls_entry(self, label, next_id):
+        label_ = stringify(label, 3)
+        next_id_ = stringify(next_id, 4)
+        self.send_request_add_entry_to_action(
+            "forwarding.mpls",
+            [self.Exact("mpls_label", label_)],
+            "forwarding.pop_mpls_and_next", [("next_id", next_id_)])
+
     def add_forwarding_acl_cpu_entry(self, eth_type=None, clone=False):
         eth_type_ = stringify(eth_type, 2)
         eth_type_mask = stringify(0xFFFF, 2)
@@ -302,9 +313,12 @@ class FabricTest(P4RuntimeTest):
             "next.output_simple", [("port_num", egress_port_)])
 
     def add_next_multicast(self, next_id, mcast_group_id):
+        next_id_ = stringify(next_id, 4)
         mcast_group_id_ = stringify(mcast_group_id, 2)
-        self.add_next_hashed_indirect_action(next_id,
-            "next.multicast_hashed", [("gid", mcast_group_id_)])
+        self.send_request_add_entry_to_action(
+            "next.multicast",
+            [self.Exact("next_id", next_id_)],
+            "next.set_mcast_group_id", [("group_id", mcast_group_id_)])
 
     def add_next_multicast_simple(self, next_id, mcast_group_id):
         next_id_ = stringify(next_id, 4)
@@ -341,7 +355,7 @@ class FabricTest(P4RuntimeTest):
             "next.next_vlan",
             [self.Exact("next_id", next_id_)],
             "next.set_vlan",
-            [("new_vlan_id", vlan_id_)])
+            [("vlan_id", vlan_id_)])
 
     def add_next_hashed_indirect_action(self, next_id, action_name, params):
         next_id_ = stringify(next_id, 4)
@@ -562,10 +576,10 @@ class IPv4UnicastTest(FabricTest):
         else:
             self.setup_port(self.port2, DEFAULT_VLAN, False)
         # Forwarding type -> routing v4
-        self.set_forwarding_type(self.port1, switch_mac, 0x800,
+        self.set_forwarding_type(self.port1, switch_mac, ETH_TYPE_IPV4,
                                  FORWARDING_TYPE_UNICAST_IPV4)
         if bidirectional:
-            self.set_forwarding_type(self.port2, switch_mac, 0x800,
+            self.set_forwarding_type(self.port2, switch_mac, ETH_TYPE_IPV4,
                                      FORWARDING_TYPE_UNICAST_IPV4)
         # Routing entry.
         self.add_forwarding_routing_v4_entry(dst_ipv4, prefix_len, next_id2)
@@ -621,6 +635,47 @@ class IPv4UnicastTest(FabricTest):
             exp_ports.append(self.port1)
 
         testutils.verify_each_packet_on_each_port(self, exp_pkts, exp_ports)
+
+
+class MplsSegmentRoutingTest(FabricTest):
+    def runMplsSegmentRoutingTest(self, pkt, dst_mac, next_hop_spine=True):
+        if IP not in pkt or Ether not in pkt:
+            self.fail("Cannot do MPLS segment routing test with packet that is not IP")
+        if Dot1Q in pkt:
+            self.fail("Cannot do MPLS segment routing test with VLAN tagged packet")
+
+        next_id = MPLS_LABEL_1
+        label = MPLS_LABEL_1
+        group_id = MPLS_LABEL_1
+        mpls_ttl = DEFAULT_MPLS_TTL
+        switch_mac = pkt[Ether].dst
+
+        # Setup ports, both untagged
+        self.setup_port(self.port1, DEFAULT_VLAN, False)
+        self.setup_port(self.port2, DEFAULT_VLAN, False)
+        # Forwarding type -> mpls
+        self.set_forwarding_type(self.port1, switch_mac, ETH_TYPE_MPLS_UNICAST,
+                                 FORWARDING_TYPE_MPLS)
+        # Mpls entry.
+        self.add_forwarding_mpls_entry(label, next_id)
+
+        if not next_hop_spine:
+            self.add_next_routing(next_id, self.port2, switch_mac, dst_mac)
+        else:
+            params = [self.port2, switch_mac, dst_mac, label]
+            self.add_next_mpls_routing_group(next_id, group_id, [params])
+
+        exp_pkt = pkt.copy()
+        pkt = pkt_add_mpls(pkt, label, mpls_ttl)
+        exp_pkt[Ether].src = switch_mac
+        exp_pkt[Ether].dst = dst_mac
+        if not next_hop_spine:
+            exp_pkt[IP].ttl = exp_pkt[IP].ttl - 1
+        else:
+            exp_pkt = pkt_add_mpls(exp_pkt, label, mpls_ttl - 1)
+
+        testutils.send_packet(self, self.port1, str(pkt))
+        testutils.verify_packet(self, exp_pkt, self.port2)
 
 
 class PacketOutTest(FabricTest):
