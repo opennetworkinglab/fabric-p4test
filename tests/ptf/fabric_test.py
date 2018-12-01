@@ -30,6 +30,7 @@ DEFAULT_PRIORITY = 10
 
 FORWARDING_TYPE_BRIDGING = 0
 FORWARDING_TYPE_UNICAST_IPV4 = 2
+FORWARDING_TYPE_MPLS = 1
 
 DEFAULT_MPLS_TTL = 64
 MIN_PKT_LEN = 80
@@ -38,6 +39,7 @@ UDP_GTP_PORT = 2152
 
 ETH_TYPE_ARP = 0x0806
 ETH_TYPE_IPV4 = 0x0800
+ETH_TYPE_MPLS_UNICAST = 0x8847
 
 # In case the "correct" version of scapy (from p4lang) is not installed, we
 # provide the INT header formats in xnt.py
@@ -70,6 +72,7 @@ VLAN_ID_1 = 100
 VLAN_ID_2 = 200
 DEFAULT_VLAN = 4094
 
+MPLS_LABEL_1 = 100
 MPLS_LABEL_2 = 200
 
 TEID_1 = 0xeeffc0f0
@@ -147,6 +150,16 @@ def pkt_decrement_ttl(pkt):
 
 
 class FabricTest(P4RuntimeTest):
+
+    def __init__(self):
+        super(FabricTest, self).__init__()
+        self.next_mbr_id = 1
+
+    def get_next_mbr_id(self):
+        mbr_id = self.next_mbr_id
+        self.next_mbr_id = self.next_mbr_id + 1
+        return mbr_id
+
     def setUp(self):
         super(FabricTest, self).setUp()
         self.port1 = self.swports(1)
@@ -185,27 +198,28 @@ class FabricTest(P4RuntimeTest):
     def setup_port(self, port_id, vlan_id, tagged=False):
         if tagged:
             self.set_ingress_port_vlan(ingress_port=port_id, vlan_id=vlan_id,
-                                       vlan_valid=tagged, new_vlan_id=vlan_id)
+                                       vlan_valid=True)
         else:
-            self.set_ingress_port_vlan(ingress_port=port_id, vlan_id=0,
-                                       vlan_valid=False, new_vlan_id=vlan_id)
+            self.set_ingress_port_vlan(ingress_port=port_id,
+                                       vlan_valid=False, internal_vlan_id=vlan_id)
             self.set_egress_vlan_pop(egress_port=port_id, vlan_id=vlan_id)
 
     def set_ingress_port_vlan(self, ingress_port, vlan_valid=False,
                               vlan_id=0,
-                              new_vlan_id=0):
+                              internal_vlan_id=0):
         ingress_port_ = stringify(ingress_port, 2)
         vlan_valid_ = '\x01' if vlan_valid else '\x00'
         vlan_id_ = stringify(vlan_id, 2)
         vlan_id_mask_ = stringify(4095 if vlan_valid else 0, 2)
-        new_vlan_id_ = stringify(new_vlan_id, 2)
-        action_name = "set_vlan" if vlan_valid else "push_internal_vlan"
+        new_vlan_id_ = stringify(internal_vlan_id, 2)
+        action_name = "permit" if vlan_valid else "permit_with_internal_vlan"
+        action_params = [] if vlan_valid else [("vlan_id", new_vlan_id_)]
         self.send_request_add_entry_to_action(
             "filtering.ingress_port_vlan",
-            [self.Exact("standard_metadata.ingress_port", ingress_port_),
-             self.Exact("hdr.vlan_tag.is_valid", vlan_valid_),
-             self.Ternary("hdr.vlan_tag.vlan_id", vlan_id_, vlan_id_mask_)],
-            "filtering." + action_name, [("new_vlan_id", new_vlan_id_)],
+            [self.Exact("ig_port", ingress_port_),
+             self.Exact("vlan_is_valid", vlan_valid_),
+             self.Ternary("vlan_id", vlan_id_, vlan_id_mask_)],
+            "filtering." + action_name, action_params,
             DEFAULT_PRIORITY)
 
     def set_egress_vlan_pop(self, egress_port, vlan_id):
@@ -213,11 +227,11 @@ class FabricTest(P4RuntimeTest):
         vlan_id = stringify(vlan_id, 2)
         self.send_request_add_entry_to_action(
             "egress_next.egress_vlan",
-            [self.Exact("hdr.vlan_tag.vlan_id", vlan_id),
-             self.Exact("standard_metadata.egress_port", egress_port)],
+            [self.Exact("vlan_id", vlan_id),
+             self.Exact("eg_port", egress_port)],
             "egress_next.pop_vlan", [])
 
-    def set_forwarding_type(self, ingress_port, eth_dstAddr, ethertype=0x800,
+    def set_forwarding_type(self, ingress_port, eth_dstAddr, ethertype=ETH_TYPE_IPV4,
                             fwd_type=FORWARDING_TYPE_UNICAST_IPV4):
         ingress_port_ = stringify(ingress_port, 2)
         eth_dstAddr_ = mac_to_binary(eth_dstAddr)
@@ -226,23 +240,23 @@ class FabricTest(P4RuntimeTest):
         fwd_type_ = stringify(fwd_type, 1)
         self.send_request_add_entry_to_action(
             "filtering.fwd_classifier",
-            [self.Exact("standard_metadata.ingress_port", ingress_port_),
-             self.Ternary("hdr.ethernet.dst_addr", eth_dstAddr_, eth_mask_),
-             self.Exact("hdr.vlan_tag.ether_type", ethertype_)],
+            [self.Exact("ig_port", ingress_port_),
+             self.Ternary("eth_dst", eth_dstAddr_, eth_mask_),
+             self.Exact("eth_type", ethertype_)],
             "filtering.set_forwarding_type", [("fwd_type", fwd_type_)],
             priority=DEFAULT_PRIORITY)
 
-    def add_bridging_entry(self, vlan_id, eth_dstAddr, eth_dstAddr_mask,
-                           next_id):
+    def add_bridging_entry(self, vlan_id, eth_dstAddr, eth_dstAddr_mask, next_id):
         vlan_id_ = stringify(vlan_id, 2)
-        eth_dstAddr_ = mac_to_binary(eth_dstAddr)
-        eth_dstAddr_mask_ = mac_to_binary(eth_dstAddr_mask)
+        mk = [self.Exact("vlan_id", vlan_id_)]
+        if eth_dstAddr is not None:
+            eth_dstAddr_ = mac_to_binary(eth_dstAddr)
+            eth_dstAddr_mask_ = mac_to_binary(eth_dstAddr_mask)
+            mk.append(self.Ternary(
+                "eth_dst", eth_dstAddr_, eth_dstAddr_mask_))
         next_id_ = stringify(next_id, 4)
         self.send_request_add_entry_to_action(
-            "forwarding.bridging",
-            [self.Exact("hdr.vlan_tag.vlan_id", vlan_id_),
-             self.Ternary("hdr.ethernet.dst_addr",
-                          eth_dstAddr_, eth_dstAddr_mask_)],
+            "forwarding.bridging", mk,
             "forwarding.set_next_id_bridging", [("next_id", next_id_)],
             DEFAULT_PRIORITY)
 
@@ -252,25 +266,50 @@ class FabricTest(P4RuntimeTest):
         next_id_ = stringify(next_id, 4)
         self.send_request_add_entry_to_action(
             "forwarding.routing_v4",
-            [self.Lpm("hdr.ipv4.dst_addr", ipv4_dstAddr_, ipv4_pLen)],
+            [self.Lpm("ipv4_dst", ipv4_dstAddr_, ipv4_pLen)],
             "forwarding.set_next_id_routing_v4", [("next_id", next_id_)])
+
+    def add_forwarding_mpls_entry(self, label, next_id):
+        label_ = stringify(label, 3)
+        next_id_ = stringify(next_id, 4)
+        self.send_request_add_entry_to_action(
+            "forwarding.mpls",
+            [self.Exact("mpls_label", label_)],
+            "forwarding.pop_mpls_and_next", [("next_id", next_id_)])
 
     def add_forwarding_acl_cpu_entry(self, eth_type=None, clone=False):
         eth_type_ = stringify(eth_type, 2)
         eth_type_mask = stringify(0xFFFF, 2)
         action_name = "clone_to_cpu" if clone else "punt_to_cpu"
         self.send_request_add_entry_to_action(
-            "forwarding.acl",
-            [self.Ternary("hdr.vlan_tag.ether_type", eth_type_, eth_type_mask)],
-            "forwarding." + action_name, [],
+            "acl.acl",
+            [self.Ternary("eth_type", eth_type_, eth_type_mask)],
+            "acl." + action_name, [],
             DEFAULT_PRIORITY)
 
-    def add_next_hop(self, next_id, egress_port):
+    def add_xconnect(self, next_id, port1, port2):
+        next_id_ = stringify(next_id, 4)
+        port1_ = stringify(port1, 2)
+        port2_ = stringify(port2, 2)
+        for (inport, outport) in ((port1_, port2_), (port2_, port1_)):
+            self.send_request_add_entry_to_action(
+                "next.xconnect",
+                [self.Exact("next_id", next_id_),
+                 self.Exact("ig_port", inport)],
+                "next.output_xconnect", [("port_num", outport)])
+
+    def add_next_output(self, next_id, egress_port):
+        egress_port_ = stringify(egress_port, 2)
+        self.add_next_hashed_indirect_action(
+            next_id,
+            "next.output_hashed", [("port_num", egress_port_)])
+
+    def add_next_output_simple(self, next_id, egress_port):
         next_id_ = stringify(next_id, 4)
         egress_port_ = stringify(egress_port, 2)
         self.send_request_add_entry_to_action(
             "next.simple",
-            [self.Exact("fabric_metadata.next_id", next_id_)],
+            [self.Exact("next_id", next_id_)],
             "next.output_simple", [("port_num", egress_port_)])
 
     def add_next_multicast(self, next_id, mcast_group_id):
@@ -278,51 +317,96 @@ class FabricTest(P4RuntimeTest):
         mcast_group_id_ = stringify(mcast_group_id, 2)
         self.send_request_add_entry_to_action(
             "next.multicast",
-            [self.Exact("fabric_metadata.next_id", next_id_)],
+            [self.Exact("next_id", next_id_)],
+            "next.set_mcast_group_id", [("group_id", mcast_group_id_)])
+
+    def add_next_multicast_simple(self, next_id, mcast_group_id):
+        next_id_ = stringify(next_id, 4)
+        mcast_group_id_ = stringify(mcast_group_id, 2)
+        self.send_request_add_entry_to_action(
+            "next.multicast",
+            [self.Exact("next_id", next_id_)],
             "next.set_mcast_group", [("gid", mcast_group_id_)])
 
-    def add_next_hop_L3(self, next_id, egress_port, smac, dmac):
+    def add_next_routing(self, next_id, egress_port, smac, dmac):
+        egress_port_ = stringify(egress_port, 2)
+        smac_ = mac_to_binary(smac)
+        dmac_ = mac_to_binary(dmac)
+        self.add_next_hashed_indirect_action(
+            next_id,
+            "next.routing_hashed",
+            [("port_num", egress_port_), ("smac", smac_), ("dmac", dmac_)])
+
+    def add_next_routing_simple(self, next_id, egress_port, smac, dmac):
         next_id_ = stringify(next_id, 4)
         egress_port_ = stringify(egress_port, 2)
         smac_ = mac_to_binary(smac)
         dmac_ = mac_to_binary(dmac)
         self.send_request_add_entry_to_action(
             "next.simple",
-            [self.Exact("fabric_metadata.next_id", next_id_)],
-            "next.l3_routing_simple",
+            [self.Exact("next_id", next_id_)],
+            "next.routing_simple",
             [("port_num", egress_port_), ("smac", smac_), ("dmac", dmac_)])
 
-    def add_vlan_meta(self, next_id, new_vlan_id):
+    def add_next_vlan(self, next_id, new_vlan_id):
         next_id_ = stringify(next_id, 4)
         vlan_id_ = stringify(new_vlan_id, 2)
         self.send_request_add_entry_to_action(
-            "next.vlan_meta",
-            [self.Exact("fabric_metadata.next_id", next_id_)],
+            "next.next_vlan",
+            [self.Exact("next_id", next_id_)],
             "next.set_vlan",
-            [("new_vlan_id", vlan_id_)])
+            [("vlan_id", vlan_id_)])
 
-    # next_hops is a dictionary mapping mbr_id to (egress_port, smac, dmac)
-    # we can break this method into several ones (group creation, etc.) if there
-    # is a need when adding new tests in the future
-    def add_next_hop_L3_group(self, next_id, grp_id, next_hops=None):
+    def add_next_hashed_indirect_action(self, next_id, action_name, params):
         next_id_ = stringify(next_id, 4)
+        mbr_id = self.get_next_mbr_id()
+        self.send_request_add_member("next.hashed_selector",
+                                     mbr_id, action_name, params)
+        self.send_request_add_entry_to_member(
+            "next.hashed", [self.Exact("next_id", next_id_)], mbr_id)
+
+    # actions is a tuple (action_name, param_tuples)
+    # params_tuples contains a tuple for each param (param_name, param_value)
+    def add_next_hashed_group_action(self, next_id, grp_id, actions=()):
+        next_id_ = stringify(next_id, 4)
+        mbr_ids = []
+        for action in actions:
+            mbr_id = self.get_next_mbr_id()
+            mbr_ids.append(mbr_id)
+            self.send_request_add_member("next.hashed_selector", mbr_id, *action)
+        self.send_request_add_group("next.hashed_selector", grp_id,
+                                    grp_size=len(mbr_ids), mbr_ids=mbr_ids)
+        self.send_request_add_entry_to_group(
+            "next.hashed",
+            [self.Exact("next_id", next_id_)],
+            grp_id)
+
+    # next_hops is a list of tuples (egress_port, smac, dmac)
+    def add_next_routing_group(self, next_id, grp_id, next_hops=None):
+        actions = []
         if next_hops is not None:
-            for mbr_id, params in next_hops.items():
-                egress_port, smac, dmac = params
+            for (egress_port, smac, dmac) in next_hops:
                 egress_port_ = stringify(egress_port, 2)
                 smac_ = mac_to_binary(smac)
                 dmac_ = mac_to_binary(dmac)
-                self.send_request_add_member(
-                    "next.ecmp_selector", mbr_id, "next.l3_routing_hashed",
-                    [("port_num", egress_port_), ("smac", smac_), ("dmac", dmac_)])
-        self.send_request_add_group("next.ecmp_selector", grp_id,
-                                    grp_size=32, mbr_ids=next_hops.keys())
-        self.send_request_add_entry_to_group(
-            "next.hashed",
-            [self.Exact("fabric_metadata.next_id", next_id_)],
-            grp_id)
+                actions.append([
+                    "next.routing_hashed",
+                    [("port_num", egress_port_), ("smac", smac_), ("dmac", dmac_)]
+                ])
+        self.add_next_hashed_group_action(next_id, grp_id, actions)
 
-    def add_next_hop_mpls_v4(self, next_id, egress_port, smac, dmac, label):
+    def add_next_mpls_routing(self, next_id, egress_port, smac, dmac, label):
+        egress_port_ = stringify(egress_port, 2)
+        smac_ = mac_to_binary(smac)
+        dmac_ = mac_to_binary(dmac)
+        label_ = stringify(label, 3)
+        self.add_next_hashed_indirect_action(
+            next_id,
+            "next.mpls_routing_hashed",
+            [("port_num", egress_port_), ("smac", smac_), ("dmac", dmac_),
+             ("label", label_)])
+
+    def add_next_mpls_routing_simple(self, next_id, egress_port, smac, dmac, label):
         next_id_ = stringify(next_id, 4)
         egress_port_ = stringify(egress_port, 2)
         smac_ = mac_to_binary(smac)
@@ -330,32 +414,26 @@ class FabricTest(P4RuntimeTest):
         label_ = stringify(label, 3)
         self.send_request_add_entry_to_action(
             "next.simple",
-            [self.Exact("fabric_metadata.next_id", next_id_)],
-            "next.mpls_routing_v4_simple",
+            [self.Exact("next_id", next_id_)],
+            "next.mpls_routing_simple",
             [("port_num", egress_port_), ("smac", smac_), ("dmac", dmac_),
              ("label", label_)])
 
-    # next_hops is a dictionary mapping mbr_id to (egress_port, smac, dmac,
-    # label)
-    def add_next_hop_mpls_v4_group(self, next_id, grp_id, next_hops=None):
-        next_id_ = stringify(next_id, 4)
+    # next_hops is a list of tuples (egress_port, smac, dmac)
+    def add_next_mpls_routing_group(self, next_id, grp_id, next_hops=None):
+        actions = []
         if next_hops is not None:
-            for mbr_id, params in next_hops.items():
-                egress_port, smac, dmac, label = params
+            for (egress_port, smac, dmac, label) in next_hops:
                 egress_port_ = stringify(egress_port, 2)
                 smac_ = mac_to_binary(smac)
                 dmac_ = mac_to_binary(dmac)
                 label_ = stringify(label, 3)
-                self.send_request_add_member(
-                    "next.ecmp_selector", mbr_id, "next.mpls_routing_v4_hashed",
-                    [("port_num", egress_port_), ("smac", smac_), ("dmac", dmac_),
-                     ("label", label_)])
-        self.send_request_add_group("next.ecmp_selector", grp_id,
-                                    grp_size=32, mbr_ids=next_hops.keys())
-        self.send_request_add_entry_to_group(
-            "next.hashed",
-            [self.Exact("fabric_metadata.next_id", next_id_)],
-            grp_id)
+                actions.append([
+                    "next.mpls_routing_hashed",
+                    [("port_num", egress_port_), ("smac", smac_),
+                     ("dmac", dmac_), ("label", label_)]
+                ])
+        self.add_next_hashed_group_action(next_id, grp_id, actions)
 
     def add_mcast_group(self, group_id, ports):
         req = self.get_new_write_request()
@@ -382,8 +460,8 @@ class BridgingTest(FabricTest):
         # miss on filtering.fwd_classifier => bridging
         self.add_bridging_entry(vlan_id, mac_src, MAC_MASK, 10)
         self.add_bridging_entry(vlan_id, mac_dst, MAC_MASK, 20)
-        self.add_next_hop(10, self.port1)
-        self.add_next_hop(20, self.port2)
+        self.add_next_output(10, self.port1)
+        self.add_next_output(20, self.port2)
 
         exp_pkt = pkt_decrement_ttl(pkt.copy())
         pkt2 = pkt_mac_swap(pkt.copy())
@@ -401,6 +479,29 @@ class BridgingTest(FabricTest):
         testutils.send_packet(self, self.port2, str(pkt2))
         testutils.verify_each_packet_on_each_port(
             self, [exp_pkt, exp_pkt2], [self.port2, self.port1])
+
+
+class DoubleVlanXConnectTest(FabricTest):
+
+    def runXConnectTest(self, pkt):
+        vlan_id_outer = 100
+        vlan_id_inner = 200
+        next_id = 99
+        self.setup_port(self.port1, vlan_id_outer, tagged=True)
+        self.setup_port(self.port2, vlan_id_outer, tagged=True)
+        # miss on filtering.fwd_classifier => bridging
+        self.add_bridging_entry(vlan_id_outer, None, None, next_id)
+        self.add_xconnect(next_id, self.port1, self.port2)
+
+        pkt = pkt_add_vlan(pkt, vlan_vid=vlan_id_inner)
+        pkt = pkt_add_vlan(pkt, vlan_vid=vlan_id_outer)
+        exp_pkt = pkt_decrement_ttl(pkt.copy())
+
+        testutils.send_packet(self, self.port1, str(pkt))
+        testutils.verify_packet(self, exp_pkt, self.port2)
+
+        testutils.send_packet(self, self.port2, str(pkt))
+        testutils.verify_packet(self, exp_pkt, self.port1)
 
 
 class ArpBroadcastTest(FabricTest):
@@ -475,10 +576,10 @@ class IPv4UnicastTest(FabricTest):
         else:
             self.setup_port(self.port2, DEFAULT_VLAN, False)
         # Forwarding type -> routing v4
-        self.set_forwarding_type(self.port1, switch_mac, 0x800,
+        self.set_forwarding_type(self.port1, switch_mac, ETH_TYPE_IPV4,
                                  FORWARDING_TYPE_UNICAST_IPV4)
         if bidirectional:
-            self.set_forwarding_type(self.port2, switch_mac, 0x800,
+            self.set_forwarding_type(self.port2, switch_mac, ETH_TYPE_IPV4,
                                      FORWARDING_TYPE_UNICAST_IPV4)
         # Routing entry.
         self.add_forwarding_routing_v4_entry(dst_ipv4, prefix_len, next_id2)
@@ -486,15 +587,15 @@ class IPv4UnicastTest(FabricTest):
             self.add_forwarding_routing_v4_entry(src_ipv4, prefix_len, next_id1)
 
         if not mpls:
-            self.add_next_hop_L3(next_id2, self.port2, switch_mac, dst_mac)
-            self.add_vlan_meta(next_id2, vlan2)
+            self.add_next_routing(next_id2, self.port2, switch_mac, dst_mac)
+            self.add_next_vlan(next_id2, vlan2)
             if bidirectional:
-                self.add_next_hop_L3(next_id1, self.port1, switch_mac, src_mac)
-                self.add_vlan_meta(next_id1, vlan1)
+                self.add_next_routing(next_id1, self.port1, switch_mac, src_mac)
+                self.add_next_vlan(next_id1, vlan1)
         else:
             params2 = [self.port2, switch_mac, dst_mac, label2]
-            self.add_next_hop_mpls_v4_group(next_id2, group_id2, {1: params2})
-            self.add_vlan_meta(next_id2, DEFAULT_VLAN)
+            self.add_next_mpls_routing_group(next_id2, group_id2, [params2])
+            self.add_next_vlan(next_id2, DEFAULT_VLAN)
 
         if exp_pkt is None:
             exp_pkt = pkt.copy()
@@ -536,6 +637,47 @@ class IPv4UnicastTest(FabricTest):
         testutils.verify_each_packet_on_each_port(self, exp_pkts, exp_ports)
 
 
+class MplsSegmentRoutingTest(FabricTest):
+    def runMplsSegmentRoutingTest(self, pkt, dst_mac, next_hop_spine=True):
+        if IP not in pkt or Ether not in pkt:
+            self.fail("Cannot do MPLS segment routing test with packet that is not IP")
+        if Dot1Q in pkt:
+            self.fail("Cannot do MPLS segment routing test with VLAN tagged packet")
+
+        next_id = MPLS_LABEL_1
+        label = MPLS_LABEL_1
+        group_id = MPLS_LABEL_1
+        mpls_ttl = DEFAULT_MPLS_TTL
+        switch_mac = pkt[Ether].dst
+
+        # Setup ports, both untagged
+        self.setup_port(self.port1, DEFAULT_VLAN, False)
+        self.setup_port(self.port2, DEFAULT_VLAN, False)
+        # Forwarding type -> mpls
+        self.set_forwarding_type(self.port1, switch_mac, ETH_TYPE_MPLS_UNICAST,
+                                 FORWARDING_TYPE_MPLS)
+        # Mpls entry.
+        self.add_forwarding_mpls_entry(label, next_id)
+
+        if not next_hop_spine:
+            self.add_next_routing(next_id, self.port2, switch_mac, dst_mac)
+        else:
+            params = [self.port2, switch_mac, dst_mac, label]
+            self.add_next_mpls_routing_group(next_id, group_id, [params])
+
+        exp_pkt = pkt.copy()
+        pkt = pkt_add_mpls(pkt, label, mpls_ttl)
+        exp_pkt[Ether].src = switch_mac
+        exp_pkt[Ether].dst = dst_mac
+        if not next_hop_spine:
+            exp_pkt[IP].ttl = exp_pkt[IP].ttl - 1
+        else:
+            exp_pkt = pkt_add_mpls(exp_pkt, label, mpls_ttl - 1)
+
+        testutils.send_packet(self, self.port1, str(pkt))
+        testutils.verify_packet(self, exp_pkt, self.port2)
+
+
 class PacketOutTest(FabricTest):
     def runPacketOutTest(self, pkt):
         for port in [self.port1, self.port2]:
@@ -572,8 +714,8 @@ class SpgwSimpleTest(IPv4UnicastTest):
         self.push_update_add_entry_to_action(
             req,
             "spgw_ingress.s1u_filter_table",
-            [self.Exact("gtpu_ipv4.dst_addr", s1u_sgw_ipv4_)],
-            "NoAction", [])
+            [self.Exact("gtp_ipv4_dst", s1u_sgw_ipv4_)],
+            "nop", [])
         self.write_request(req)
 
     def setup_downlink(self, s1u_sgw_ipv4, s1u_enb_ipv4, ue_ipv4, teid):
@@ -585,7 +727,7 @@ class SpgwSimpleTest(IPv4UnicastTest):
         self.push_update_add_entry_to_action(
             req,
             "spgw_ingress.dl_sess_lookup",
-            [self.Exact("ipv4.dst_addr", end_point_ipv4_)],
+            [self.Exact("ipv4_dst", end_point_ipv4_)],
             "spgw_ingress.set_dl_sess_info",
             [("teid", teid_), ("s1u_enb_addr", s1u_enb_ipv4_),
              ("s1u_sgw_addr", s1u_sgw_ipv4_)])
@@ -643,14 +785,14 @@ class IntTest(IPv4UnicastTest):
     def setup_transit(self, switch_id):
         self.send_request_add_entry_to_action(
             "tb_int_insert",
-            [self.Exact("hdr.int_header.is_valid", stringify(1, 1))],
+            [self.Exact("int_is_valid", stringify(1, 1))],
             "init_metadata", [("switch_id", stringify(switch_id, 4))])
 
     def setup_source_port(self, source_port):
         source_port_ = stringify(source_port, 2)
         self.send_request_add_entry_to_action(
             "tb_set_source",
-            [self.Exact("standard_metadata.ingress_port", source_port_)],
+            [self.Exact("ig_port", source_port_)],
             "int_set_source", [])
 
     def get_ins_mask(self, instructions):
@@ -714,10 +856,10 @@ class IntTest(IPv4UnicastTest):
 
         self.send_request_add_entry_to_action(
             "tb_int_source",
-            [self.Ternary("hdr.ipv4.src_addr", ipv4_src_, ipv4_mask),
-             self.Ternary("hdr.ipv4.dst_addr", ipv4_dst_, ipv4_mask),
-             self.Ternary("fabric_metadata.l4_src_port", sport_, port_mask),
-             self.Ternary("fabric_metadata.l4_dst_port", dport_, port_mask),
+            [self.Ternary("ipv4_src", ipv4_src_, ipv4_mask),
+             self.Ternary("ipv4_dst", ipv4_dst_, ipv4_mask),
+             self.Ternary("l4_sport", sport_, port_mask),
+             self.Ternary("l4_dport", dport_, port_mask),
              ],
             "int_source_dscp", [
                 ("max_hop", max_hop_),

@@ -25,6 +25,7 @@ vlan_confs = {
     "tag->tag": [True, True],
     "untag->untag": [False, False],
     "tag->untag": [True, False],
+    "untag->tag": [False, True],
 }
 
 
@@ -41,6 +42,20 @@ class FabricBridgingTest(BridgingTest):
                 pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
                     pktlen=120)
                 self.doRunTest(tagged[0], tagged[1], pkt)
+
+
+class FabricDoubleVlanXConnectTest(DoubleVlanXConnectTest):
+    @autocleanup
+    def doRunTest(self, pkt):
+        self.runXConnectTest(pkt)
+
+    def runTest(self):
+        print ""
+        for pkt_type in ["tcp", "udp", "icmp"]:
+            print "Testing %s packet..." % pkt_type
+            pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
+                pktlen=120)
+            self.doRunTest(pkt)
 
 
 @group("multicast")
@@ -116,11 +131,11 @@ class FabricIPv4UnicastGroupTest(FabricTest):
                                  FORWARDING_TYPE_UNICAST_IPV4)
         self.add_forwarding_routing_v4_entry(HOST2_IPV4, 24, 300)
         grp_id = 66
-        mbrs = {
-            2: (self.port2, SWITCH_MAC, HOST2_MAC),
-            3: (self.port3, SWITCH_MAC, HOST3_MAC),
-        }
-        self.add_next_hop_L3_group(300, grp_id, mbrs)
+        mbrs = [
+            (self.port2, SWITCH_MAC, HOST2_MAC),
+            (self.port3, SWITCH_MAC, HOST3_MAC),
+        ]
+        self.add_next_routing_group(300, grp_id, mbrs)
         self.set_egress_vlan_pop(self.port2, vlan_id)
         self.set_egress_vlan_pop(self.port3, vlan_id)
 
@@ -150,11 +165,11 @@ class FabricIPv4UnicastGroupTestAllPortTcpSport(FabricTest):
                                  FORWARDING_TYPE_UNICAST_IPV4)
         self.add_forwarding_routing_v4_entry(HOST2_IPV4, 24, 300)
         grp_id = 66
-        mbrs = {
-            2: (self.port2, SWITCH_MAC, HOST2_MAC),
-            3: (self.port3, SWITCH_MAC, HOST3_MAC),
-        }
-        self.add_next_hop_L3_group(300, grp_id, mbrs)
+        mbrs = [
+            (self.port2, SWITCH_MAC, HOST2_MAC),
+            (self.port3, SWITCH_MAC, HOST3_MAC),
+        ]
+        self.add_next_routing_group(300, grp_id, mbrs)
         self.set_egress_vlan_pop(self.port2, vlan_id)
         self.set_egress_vlan_pop(self.port3, vlan_id)
         # tcpsport_toport list is used to learn the tcp_source_port that
@@ -209,11 +224,11 @@ class FabricIPv4UnicastGroupTestAllPortTcpDport(FabricTest):
                                  FORWARDING_TYPE_UNICAST_IPV4)
         self.add_forwarding_routing_v4_entry(HOST2_IPV4, 24, 300)
         grp_id = 66
-        mbrs = {
-            2: (self.port2, SWITCH_MAC, HOST2_MAC),
-            3: (self.port3, SWITCH_MAC, HOST3_MAC),
-        }
-        self.add_next_hop_L3_group(300, grp_id, mbrs)
+        mbrs = [
+            (self.port2, SWITCH_MAC, HOST2_MAC),
+            (self.port3, SWITCH_MAC, HOST3_MAC),
+        ]
+        self.add_next_routing_group(300, grp_id, mbrs)
         self.set_egress_vlan_pop(self.port2, vlan_id)
         self.set_egress_vlan_pop(self.port3, vlan_id)
         # tcpdport_toport list is used to learn the tcp_destination_port that
@@ -269,11 +284,11 @@ class FabricIPv4UnicastGroupTestAllPortIpSrc(FabricTest):
                                  FORWARDING_TYPE_UNICAST_IPV4)
         self.add_forwarding_routing_v4_entry(HOST2_IPV4, 24, 300)
         grp_id = 66
-        mbrs = {
-            2: (self.port2, SWITCH_MAC, HOST2_MAC),
-            3: (self.port3, SWITCH_MAC, HOST3_MAC),
-        }
-        self.add_next_hop_L3_group(300, grp_id, mbrs)
+        mbrs = [
+            (self.port2, SWITCH_MAC, HOST2_MAC),
+            (self.port3, SWITCH_MAC, HOST3_MAC),
+        ]
+        self.add_next_routing_group(300, grp_id, mbrs)
         self.set_egress_vlan_pop(self.port2, vlan_id)
         self.set_egress_vlan_pop(self.port3, vlan_id)
         # ipsource_toport list is used to learn the ip_src that causes the packet
@@ -333,11 +348,11 @@ class FabricIPv4UnicastGroupTestAllPortIpDst(FabricTest):
                                  FORWARDING_TYPE_UNICAST_IPV4)
         self.add_forwarding_routing_v4_entry(HOST2_IPV4, 24, 300)
         grp_id = 66
-        mbrs = {
-            2: (self.port2, SWITCH_MAC, HOST2_MAC),
-            3: (self.port3, SWITCH_MAC, HOST3_MAC),
-        }
-        self.add_next_hop_L3_group(300, grp_id, mbrs)
+        mbrs = [
+            (self.port2, SWITCH_MAC, HOST2_MAC),
+            (self.port3, SWITCH_MAC, HOST3_MAC),
+        ]
+        self.add_next_routing_group(300, grp_id, mbrs)
         self.set_egress_vlan_pop(self.port2, vlan_id)
         self.set_egress_vlan_pop(self.port3, vlan_id)
         # ipdst_toport list is used to learn the ip_dst that causes the packet
@@ -394,7 +409,7 @@ class FabricIPv4MPLSTest(FabricTest):
                                  FORWARDING_TYPE_UNICAST_IPV4)
         self.add_forwarding_routing_v4_entry(HOST2_IPV4, 24, 400)
         mpls_label = 0xaba
-        self.add_next_hop_mpls_v4(
+        self.add_next_mpls_routing(
             400, self.port2, SWITCH_MAC, HOST2_MAC, mpls_label)
         self.set_egress_vlan_pop(self.port2, vlan_id)
 
@@ -433,6 +448,25 @@ class FabricIPv4MplsGroupTest(IPv4UnicastTest):
                     pktlen=MIN_PKT_LEN
                 )
                 self.doRunTest(pkt, HOST2_MAC, tagged1)
+
+
+class FabricMplsSegmentRoutingTest(MplsSegmentRoutingTest):
+    @autocleanup
+    def doRunTest(self, pkt, mac_dest, next_hop_spine):
+        self.runMplsSegmentRoutingTest(pkt, mac_dest, next_hop_spine)
+
+    def runTest(self):
+        print ""
+        for pkt_type in ["tcp", "udp", "icmp"]:
+            for next_hop_spine in [True, False]:
+                print "Testing %s packet, next_hop_spine=%s..." \
+                      % (pkt_type, next_hop_spine)
+                pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
+                    eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
+                    ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4,
+                    pktlen=MIN_PKT_LEN
+                )
+                self.doRunTest(pkt, HOST2_MAC, next_hop_spine)
 
 
 @group("packetio")
