@@ -25,6 +25,7 @@ import struct
 import subprocess
 import sys
 import threading
+import time
 from collections import OrderedDict
 
 import google.protobuf.text_format
@@ -101,6 +102,7 @@ def update_config(p4info_path, bmv2_json_path, tofino_bin_path,
     # Send master arbitration via stream channel
     # This should go in library, to be re-used also by base_test.py.
     stream_out_q = Queue.Queue()
+    stream_in_q = Queue.Queue()
 
     def stream_req_iterator():
         while True:
@@ -109,8 +111,24 @@ def update_config(p4info_path, bmv2_json_path, tofino_bin_path,
                 break
             yield p
 
-    def stream_recv(s):
-        pass
+    def stream_recv(stream):
+        for p in stream:
+            stream_in_q.put(p)
+
+    def get_stream_packet(type_, timeout=1):
+        start = time.time()
+        try:
+            while True:
+                remaining = timeout - (time.time() - start)
+                if remaining < 0:
+                    break
+                msg = stream_in_q.get(timeout=remaining)
+                if not msg.HasField(type_):
+                    continue
+                return msg
+        except:  # timeout expired
+            pass
+        return None
 
     stream = stub.StreamChannel(stream_req_iterator())
     stream_recv_thread = threading.Thread(target=stream_recv, args=(stream,))
@@ -123,6 +141,11 @@ def update_config(p4info_path, bmv2_json_path, tofino_bin_path,
     election_id.high = 0
     election_id.low = 1
     stream_out_q.put(req)
+
+    rep = get_stream_packet("arbitration", timeout=5)
+    if rep is None:
+        error("Failed to establish handshake")
+        return False
 
     try:
         # Set pipeline config.
