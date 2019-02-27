@@ -36,10 +36,17 @@ def get_stratum_root():
         return '/home/sdn/stratum'
 
 
+def get_stratum_ld_path():
+    if 'LD_LIBRARY_PATH' in os.environ:
+        return 'LD_LIBRARY_PATH=' + os.environ['LD_LIBRARY_PATH']
+    else:
+        return 'LD_LIBRARY_PATH=/home/sdn/bmv2_install/lib'
+
+
 STRATUM_ROOT = get_stratum_root()
 STRATUM_BINARY = STRATUM_ROOT + '/bazel-bin/stratum/hal/bin/bmv2/stratum_bmv2'
 STRATUM_CONFIG_DIR = '/tmp/stratum-bmv2'
-STRATUM_LD_PATH = 'LD_LIBRARY_PATH=/home/sdn/bmv2_install/lib'
+STRATUM_LD_PATH = get_stratum_ld_path()
 INITIAL_PIPELINE = STRATUM_ROOT + '/stratum/hal/bin/bmv2/dummy.json'
 
 
@@ -92,7 +99,7 @@ class Bmv2Switch:
             '--persistent_config_dir=' + STRATUM_CONFIG_DIR,
             '--initial_pipeline=' + INITIAL_PIPELINE,
             '--cpu_port=%s' % self.cpu_port,
-            '--url=0.0.0.0:%s' % self.grpc_port,
+            '--external-hercules-urls=0.0.0.0:%s' % self.grpc_port,
         ]
         for port, intf in port_map.items():
             args.append('%d@%s' % (port, intf))
