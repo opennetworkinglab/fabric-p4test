@@ -286,6 +286,9 @@ def main():
     parser.add_argument('--skip-test',
                         help='Skip test execution (useful to perform only pipeline configuration)',
                         action="store_true", default=False)
+    parser.add_argument('--skip-launch',
+                        help='Skip switch launch (requires that switch be started manually beforehand)',
+                        action="store_true", default=False)
     args, unknown_args = parser.parse_known_args()
 
     if not check_ptf():
@@ -322,21 +325,22 @@ def main():
     grpc_port = args.grpc_addr.split(':')[1]
 
     bmv2_sw = None
-    if device == 'bmv2':
-        bmv2_sw = Bmv2Switch(device_id=args.device_id,
-                             port_map_path=args.port_map,
-                             grpc_port=grpc_port,
-                             cpu_port=args.cpu_port,
-                             loglevel='debug')
-        bmv2_sw.start()
-    elif device == 'stratum-bmv2':
-        bmv2_sw = Bmv2Switch(device_id=args.device_id,
-                             port_map_path=args.port_map,
-                             grpc_port=grpc_port,
-                             cpu_port=args.cpu_port,
-                             loglevel='debug',
-                             is_stratum=True)
-        bmv2_sw.start()
+    if args.skip_launch == False:
+        if device == 'bmv2':
+            bmv2_sw = Bmv2Switch(device_id=args.device_id,
+                                 port_map_path=args.port_map,
+                                 grpc_port=grpc_port,
+                                 cpu_port=args.cpu_port,
+                                 loglevel='debug')
+            bmv2_sw.start()
+        elif device == 'stratum-bmv2':
+            bmv2_sw = Bmv2Switch(device_id=args.device_id,
+                                 port_map_path=args.port_map,
+                                 grpc_port=grpc_port,
+                                 cpu_port=args.cpu_port,
+                                 loglevel='debug',
+                                 is_stratum=True)
+            bmv2_sw.start()
 
     try:
 
