@@ -325,7 +325,7 @@ def main():
     grpc_port = args.grpc_addr.split(':')[1]
 
     bmv2_sw = None
-    if args.skip_launch == False:
+    if args.skip_launch is False:
         if device == 'bmv2':
             bmv2_sw = Bmv2Switch(device_id=args.device_id,
                                  port_map_path=args.port_map,
