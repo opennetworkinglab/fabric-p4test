@@ -529,6 +529,7 @@ class P4RuntimeTest(BaseTest):
         for mbr_id in mbr_ids:
             member = ap_group.members.add()
             member.member_id = mbr_id
+            member.weight = 1
 
     def send_request_add_group(self, ap_name, grp_id, grp_size=32, mbr_ids=()):
         req = self.get_new_write_request()
