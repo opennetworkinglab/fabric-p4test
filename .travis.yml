@@ -16,6 +16,6 @@ install:
 jobs:
   include:
     - stage: PTF tests (ONOS master)
-      script: docker run --privileged --rm -v $PWD:/fp4test -v /tmp/onos:/onos fp4test:local bash /fp4test/travis/run_test.sh /onos all
+      script: docker run --privileged --rm -v $PWD:/fp4test -v /tmp/onos:/onos fp4test bash /fp4test/travis/run_test.sh /onos all
     - stage: Checkstyle
       script: find . -name \*.py -exec pycodestyle --max-line-length=120 --ignore=E126,E127,E722 {} +
