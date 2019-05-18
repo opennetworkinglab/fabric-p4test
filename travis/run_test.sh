@@ -7,10 +7,16 @@ FP4TEST_DIR=${TRAVIS_DIR}/../
 PTF_DIR=${FP4TEST_DIR}/tests/ptf
 
 if [[ -z "${1}" ]]; then
-    echo "ERROR: first argument should be the location of ONOS root directory"
+    echo "ERROR: first arg should be either an ONOS branch/commit ID or a directory (starting with /)"
     exit 1
 else
-    export ONOS_ROOT=${1}
+    if [[ ${1} == /* ]]; then
+        export ONOS_ROOT=${1}
+    else
+        echo "*** Testing against ONOS commit/branch: ${1}"
+        git clone https://github.com/opennetworkinglab/onos /tmp/onos -b ${1}
+        export ONOS_ROOT=/tmp/onos
+    fi
 fi
 
 # Pass all other arguments to make
