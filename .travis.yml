@@ -1,8 +1,21 @@
+dist: trusty
+
 language: python
+
+services:
+  - docker
+
 python:
-- "2.7"
-before_install:
-- pip install pycodestyle
-script:
-# Run pycodestyle on all .py files in all subfolders
-- find . -name \*.py -exec pycodestyle --max-line-length=120 --ignore=E126,E127,E722 {} +
+  - "2.7"
+
+install:
+  - pip install pycodestyle
+  - docker build -t fp4test .
+  - git clone https://github.com/opennetworkinglab/onos /tmp/onos
+
+jobs:
+  include:
+    - stage: PTF tests (ONOS master)
+      script: docker run --privileged --rm -v $PWD:/fp4test -v /tmp/onos:/onos fp4test:local bash /fp4test/travis/run_test.sh /onos all
+    - stage: Checkstyle
+      script: find . -name \*.py -exec pycodestyle --max-line-length=120 --ignore=E126,E127,E722 {} +
