@@ -31,7 +31,7 @@ from collections import OrderedDict
 import google.protobuf.text_format
 import grpc
 from p4.tmp import p4config_pb2
-from p4.v1 import p4runtime_pb2
+from p4.v1 import p4runtime_pb2, p4runtime_pb2_grpc
 
 from bmv2 import Bmv2Switch
 
@@ -95,7 +95,7 @@ def update_config(p4info_path, bmv2_json_path, tofino_bin_path,
     Performs a SetForwardingPipelineConfig on the device
     """
     channel = grpc.insecure_channel(grpc_addr)
-    stub = p4runtime_pb2.P4RuntimeStub(channel)
+    stub = p4runtime_pb2_grpc.P4RuntimeStub(channel)
 
     info("Sending P4 config")
 
