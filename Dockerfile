@@ -1,4 +1,4 @@
-FROM p4mn:latest
+FROM ccasconeonf/p4mn:latest
 
 RUN pip install git+https://github.com/p4lang/scapy-vxlan \
                 git+https://github.com/p4lang/ptf.git && \
