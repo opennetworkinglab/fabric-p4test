@@ -35,7 +35,7 @@ import scapy.packet
 import scapy.utils
 from google.rpc import status_pb2, code_pb2
 from p4.config.v1 import p4info_pb2
-from p4.v1 import p4runtime_pb2
+from p4.v1 import p4runtime_pb2, p4runtime_pb2_grpc
 from ptf import config
 from ptf.base_tests import BaseTest
 from ptf.dataplane import match_exp_pkt
@@ -207,7 +207,7 @@ class P4RuntimeTest(BaseTest):
             raise SkipTest("Skipping test in HW")
 
         self.channel = grpc.insecure_channel(grpc_addr)
-        self.stub = p4runtime_pb2.P4RuntimeStub(self.channel)
+        self.stub = p4runtime_pb2_grpc.P4RuntimeStub(self.channel)
 
         proto_txt_path = testutils.test_param_get("p4info")
         # print "Importing p4info proto from", proto_txt_path

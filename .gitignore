@@ -1,7 +1,4 @@
 *.pyc
-
-# PyCharm project files
 .idea
+*.log
 
-# emacs back-up
-*~

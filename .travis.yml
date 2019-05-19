@@ -1,8 +1,22 @@
+dist: trusty
+
 language: python
+
+services:
+  - docker
+
 python:
-- "2.7"
-before_install:
-- pip install pycodestyle
+  - "2.7"
+
+env:
+  - ONOS_BRANCH=master
+  - ONOS_BRANCH=onos-2.1
+  - ONOS_BRANCH=onos-1.15
+
+install:
+  - pip install pycodestyle
+  - docker build -t fp4test .
+
 script:
-# Run pycodestyle on all .py files in all subfolders
-- find . -name \*.py -exec pycodestyle --max-line-length=120 --ignore=E126,E127,E722 {} +
+  - docker run --privileged --rm -v $PWD:/fp4test -v /tmp/onos:/onos fp4test bash /fp4test/travis/run_test.sh $ONOS_BRANCH all
+  - find . -name \*.py -exec pycodestyle --max-line-length=120 --ignore=E126,E127,E722 {} +
