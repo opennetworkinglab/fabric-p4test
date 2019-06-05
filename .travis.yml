@@ -16,7 +16,8 @@ env:
 install:
   - pip install pycodestyle
   - docker build -t fp4test .
+  - git clone https://github.com/opennetworkinglab/onos /tmp/onos -b $ONOS_BRANCH
 
 script:
-  - docker run --privileged --rm -v $PWD:/fp4test -v /tmp/onos:/onos fp4test bash /fp4test/travis/run_test.sh $ONOS_BRANCH all
+  - docker run --privileged --rm -v $PWD:/fp4test -v /tmp/onos:/onos fp4test bash /fp4test/travis/run_test.sh /onos all
   - find . -name \*.py -exec pycodestyle --max-line-length=120 --ignore=E126,E127,E722 {} +
