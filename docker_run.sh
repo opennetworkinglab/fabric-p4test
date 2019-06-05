@@ -28,4 +28,3 @@ docker run --name ${runName} -d --privileged --rm \
     fabric-p4test:local \
     bash /fabric-p4test/travis/run_test.sh /onos ${@}
 docker logs -f ${runName} | tee ${DIR}/run.log
-
