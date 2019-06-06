@@ -16,25 +16,27 @@ env:
 before_install:
   - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
   - docker pull $DOCKER_REPO
-  - docker build --cache-from $DOCKER_REPO -t fp4test .
-  - docker tag fp4test $DOCKER_REPO
 
 install:
   - pip install pycodestyle
+  - docker build --cache-from $DOCKER_REPO -t fp4test .
+  - docker tag fp4test $DOCKER_REPO
   - git clone --depth 1 https://github.com/opennetworkinglab/onos /tmp/onos -b $ONOS_BRANCH
+
+script:
+  - docker run --privileged --rm -v $PWD:/fp4test -v /tmp/onos:/onos fp4test bash /fp4test/travis/run_test.sh /onos all
 
 jobs:
   include:
-    - stage: test
-      name: "PTF Tests"
-      script: docker run --privileged --rm -v $PWD:/fp4test -v /tmp/onos:/onos fp4test bash /fp4test/travis/run_test.sh /onos all
-    - script: find . -name \*.py -exec pycodestyle --max-line-length=120 --ignore=E126,E127,E722 {} +
+    - stage: checkstyle
       name: "Checkstyle"
-    - stage: deploy
-      name: "Push to Docker Hub"
+      script: find . -name \*.py -exec pycodestyle --max-line-length=120 --ignore=E126,E127,E722 {} +
+    - stage: push
+      name: "Docker push"
       script: docker push $DOCKER_REPO
 
 stages:
   - test
-  - name: deploy
+  - checkstyle
+  - name: push
     if: branch = master
