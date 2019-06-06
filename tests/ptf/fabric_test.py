@@ -22,6 +22,7 @@ from ptf.mask import Mask
 from scapy.contrib.mpls import MPLS
 from scapy.layers.inet import IP, UDP, TCP
 from scapy.layers.l2 import Ether, Dot1Q
+from scapy.layers.ppp import PPPoE, PPP
 
 import xnt
 from base_test import P4RuntimeTest, stringify, mac_to_binary, ipv4_to_binary
@@ -39,6 +40,7 @@ UDP_GTP_PORT = 2152
 
 ETH_TYPE_ARP = 0x0806
 ETH_TYPE_IPV4 = 0x0800
+ETH_TYPE_VLAN = 0x8100
 ETH_TYPE_MPLS_UNICAST = 0x8847
 
 # In case the "correct" version of scapy (from p4lang) is not installed, we
@@ -116,15 +118,22 @@ def pkt_mac_swap(pkt):
 
 
 def pkt_route(pkt, mac_dst):
-    pkt[Ether].src = pkt[Ether].dst
-    pkt[Ether].dst = mac_dst
-    return pkt
+    new_pkt = pkt.copy()
+    new_pkt[Ether].src = pkt[Ether].dst
+    new_pkt[Ether].dst = mac_dst
+    return new_pkt
 
 
 def pkt_add_vlan(pkt, vlan_vid=10, vlan_pcp=0, dl_vlan_cfi=0):
     return Ether(src=pkt[Ether].src, dst=pkt[Ether].dst) / \
            Dot1Q(prio=vlan_pcp, id=dl_vlan_cfi, vlan=vlan_vid) / \
            pkt[Ether].payload
+
+
+def pkt_add_pppoe(pkt, type, code, session_id):
+    return Ether(src=pkt[Ether].src, dst=pkt[Ether].dst) / \
+           PPPoE(version=1, type=type, code=code, sessionid=session_id) / \
+           PPP() / pkt[Ether].payload
 
 
 def pkt_add_mpls(pkt, label, ttl, cos=0, s=1):
@@ -544,10 +553,34 @@ class ArpBroadcastTest(FabricTest):
 
 
 class IPv4UnicastTest(FabricTest):
+
     def runIPv4UnicastTest(self, pkt, dst_mac,
                            tagged1=False, tagged2=False, prefix_len=24,
-                           exp_pkt=None, bidirectional=True, mpls=False,
-                           src_ipv4=None, dst_ipv4=None):
+                           exp_pkt=None, exp_pkt_base=None,
+                           bidirectional=False, mpls=False,
+                           src_ipv4=None, dst_ipv4=None,
+                           routed_eth_types=(ETH_TYPE_IPV4,)):
+        """
+        Execute an IPv4 unicast routing test.
+        :param pkt: input packet
+        :param dst_mac: MAC address of the next hop
+        :param tagged1: if the input port should expect VLAN tagged packets
+        :param tagged2: if the output port should expect VLAN tagged packets
+        :param prefix_len: prefix length to use in the routing table
+        :param exp_pkt: expected packet, if none one will be built using the
+            input packet
+        :param exp_pkt_base: if not none, it will be used to build the expected
+            output packet.
+        :param bidirectional: do a bidirectional forwarding test
+        :param mpls: whether the packet should be routed to the spines using
+            MPLS SR
+        :param src_ipv4: if not none, this value will be used as IPv4 src to
+            configure tables
+        :param dst_ipv4: if not none, this value will be used as IPv4 dst to
+            configure tables
+        :param routed_eth_types: eth type values used to configure the
+            classifier table to process packets via routing
+        """
         if IP not in pkt or Ether not in pkt:
             self.fail("Cannot do IPv4 test with packet that is not IP")
         if mpls and bidirectional:
@@ -555,8 +588,23 @@ class IPv4UnicastTest(FabricTest):
         if mpls and tagged2:
             self.fail("Cannot do MPLS test with egress port tagged (tagged2)")
 
-        vlan1 = VLAN_ID_1
-        vlan2 = VLAN_ID_2
+        # If the input pkt has a VLAN tag, use that to configure tables.
+        pkt_is_tagged = False
+        if Dot1Q in pkt:
+            vlan1 = pkt[Dot1Q].vlan
+            tagged1 = True
+            pkt_is_tagged = True
+        else:
+            vlan1 = VLAN_ID_1
+
+        if mpls:
+            # If MPLS test, port2 is assumed to be a spine port, with
+            # default vlan untagged.
+            vlan2 = DEFAULT_VLAN
+            assert not tagged2
+        else:
+            vlan2 = VLAN_ID_2
+
         next_id1 = 10
         next_id2 = 20
         group_id2 = 22
@@ -568,19 +616,18 @@ class IPv4UnicastTest(FabricTest):
         src_mac = pkt[Ether].src
         switch_mac = pkt[Ether].dst
 
-        # Setup ports. If MPLS test, port2 is assumed to be a spine port, with
-        # default vlan untagged.
+        # Setup ports.
         self.setup_port(self.port1, vlan1, tagged1)
-        if not mpls:
-            self.setup_port(self.port2, vlan2, tagged2)
-        else:
-            self.setup_port(self.port2, DEFAULT_VLAN, False)
+        self.setup_port(self.port2, vlan2, tagged2)
+
         # Forwarding type -> routing v4
-        self.set_forwarding_type(self.port1, switch_mac, ETH_TYPE_IPV4,
-                                 FORWARDING_TYPE_UNICAST_IPV4)
-        if bidirectional:
-            self.set_forwarding_type(self.port2, switch_mac, ETH_TYPE_IPV4,
+        for eth_type in routed_eth_types:
+            self.set_forwarding_type(self.port1, switch_mac, eth_type,
                                      FORWARDING_TYPE_UNICAST_IPV4)
+            if bidirectional:
+                self.set_forwarding_type(self.port2, switch_mac, eth_type,
+                                         FORWARDING_TYPE_UNICAST_IPV4)
+
         # Routing entry.
         self.add_forwarding_routing_v4_entry(dst_ipv4, prefix_len, next_id2)
         if bidirectional:
@@ -598,7 +645,8 @@ class IPv4UnicastTest(FabricTest):
             self.add_next_vlan(next_id2, DEFAULT_VLAN)
 
         if exp_pkt is None:
-            exp_pkt = pkt.copy()
+            # Build exp pkt using the input one.
+            exp_pkt = pkt.copy() if not exp_pkt_base else exp_pkt_base
             exp_pkt[Ether].src = switch_mac
             exp_pkt[Ether].dst = dst_mac
             if not mpls:
@@ -619,7 +667,8 @@ class IPv4UnicastTest(FabricTest):
         exp_pkt2[IP].ttl = exp_pkt2[IP].ttl - 1
 
         if tagged1:
-            pkt = pkt_add_vlan(pkt, vlan_vid=vlan1)
+            if not pkt_is_tagged:
+                pkt = pkt_add_vlan(pkt, vlan_vid=vlan1)
             exp_pkt2 = pkt_add_vlan(exp_pkt2, vlan_vid=vlan1)
 
         if tagged2:
@@ -753,7 +802,7 @@ class SpgwSimpleTest(IPv4UnicastTest):
 
         self.runIPv4UnicastTest(pkt=gtp_pkt, src_ipv4=ue_out_pkt[IP].src,
                                 dst_ipv4=ue_out_pkt[IP].dst, dst_mac=dst_mac,
-                                prefix_len=32, exp_pkt=exp_pkt, bidirectional=False,
+                                prefix_len=32, exp_pkt=exp_pkt,
                                 tagged1=tagged1, tagged2=tagged2, mpls=mpls)
 
     def runDownlinkTest(self, pkt, tagged1, tagged2, mpls):
@@ -777,7 +826,7 @@ class SpgwSimpleTest(IPv4UnicastTest):
             exp_pkt = pkt_add_vlan(exp_pkt, VLAN_ID_2)
 
         self.runIPv4UnicastTest(pkt=pkt, dst_mac=dst_mac,
-                                prefix_len=32, exp_pkt=exp_pkt, bidirectional=False,
+                                prefix_len=32, exp_pkt=exp_pkt,
                                 tagged1=tagged1, tagged2=tagged2, mpls=mpls)
 
 
@@ -934,7 +983,7 @@ class IntTest(IPv4UnicastTest):
             exp_pkt = mask_pkt
 
         self.runIPv4UnicastTest(pkt=pkt, dst_mac=HOST2_MAC, prefix_len=32,
-                                exp_pkt=exp_pkt, bidirectional=False,
+                                exp_pkt=exp_pkt,
                                 tagged1=tagged1, tagged2=tagged2, mpls=mpls)
 
     def runIntTransitTest(self, pkt, tagged1, tagged2,
@@ -996,4 +1045,74 @@ class IntTest(IPv4UnicastTest):
 
         self.runIPv4UnicastTest(pkt=pkt, dst_mac=HOST2_MAC,
                                 tagged1=tagged1, tagged2=tagged2, mpls=mpls,
-                                prefix_len=32, exp_pkt=exp_pkt, bidirectional=False)
+                                prefix_len=32, exp_pkt=exp_pkt)
+
+
+class PppoeTest(IPv4UnicastTest):
+
+    def set_port_type(self, ingress_port, direction):
+        ingress_port_ = stringify(ingress_port, 2)
+        self.send_request_add_entry_to_action(
+            "bng_ingress.t_set_type",
+            [self.Exact("ig_port", ingress_port_)],
+            "bng_ingress.set_" + direction, [])
+
+    def set_line_map(self, s_tag, c_tag, line_id):
+        s_tag_ = stringify(s_tag, 2)
+        c_tag_ = stringify(c_tag, 2)
+        line_id_ = stringify(line_id, 4)
+        self.send_request_add_entry_to_action(
+            "bng_ingress.upstream.t_line_map",
+            [self.Exact("s_tag", s_tag_), self.Exact("c_tag", c_tag_)],
+            "bng_ingress.upstream.set_line", [("line_id", line_id_)])
+
+    def set_ipv4_termination(self, line_id, ipv4_src, pppoe_session_id):
+        line_id_ = stringify(line_id, 4)
+        ipv4_src_ = ipv4_to_binary(ipv4_src)
+        pppoe_session_id_ = stringify(pppoe_session_id, 2)
+        self.send_request_add_entry_to_action(
+            "bng_ingress.upstream.t_pppoe_term_ipv4",
+            [self.Exact("line_id", line_id_),
+             self.Exact("ipv4_src", ipv4_src_),
+             self.Exact("pppoe_session_id", pppoe_session_id_)],
+            "bng_ingress.upstream.accept_and_pop_v4", [])
+
+    def set_bng_ports(self, upstream_ports, downstream_ports):
+        for p in upstream_ports:
+            self.set_port_type(p, direction="upstream")
+        for p in downstream_ports:
+            self.set_port_type(p, direction="downstream")
+
+    def enable_upstream_line(self, s_tag, c_tag, ipv4_src, line_id,
+                             pppoe_session_id):
+        self.set_line_map(s_tag=s_tag, c_tag=c_tag, line_id=line_id)
+        self.set_ipv4_termination(line_id=line_id,
+                                  ipv4_src=ipv4_src,
+                                  pppoe_session_id=pppoe_session_id)
+
+    def runUpstreamPopAndRouteV4Test(self, pkt, tagged2, mpls):
+        s_tag = vlan_id_outer = 888
+        c_tag = vlan_id_inner = 777
+        line_id = 99
+        pppoe_session_id = 0xbeac
+        next_hop_mac = HOST1_MAC
+
+        self.set_bng_ports(upstream_ports=[self.port1],
+                           downstream_ports=[self.port2])
+        self.enable_upstream_line(
+            s_tag=s_tag, c_tag=c_tag, ipv4_src=pkt[IP].src,
+            line_id=line_id, pppoe_session_id=pppoe_session_id)
+
+        # Input is the given packet with double VLAN tags and PPPoE headers.
+        pppoe_pkt = pkt_add_pppoe(pkt, type=1, code=1,
+                                  session_id=pppoe_session_id)
+        pppoe_pkt = pkt_add_vlan(pppoe_pkt, vlan_vid=vlan_id_inner)
+        pppoe_pkt = pkt_add_vlan(pppoe_pkt, vlan_vid=vlan_id_outer)
+
+        # Build expected packet from the input one, as if it was routed without
+        # VLAN and PPPoE headers.
+        exp_pkt_base = pkt.copy()
+
+        self.runIPv4UnicastTest(
+            pkt=pppoe_pkt, dst_mac=next_hop_mac, exp_pkt_base=exp_pkt_base,
+            routed_eth_types=[ETH_TYPE_VLAN], tagged2=tagged2, mpls=mpls)

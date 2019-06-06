@@ -89,7 +89,8 @@ class FabricIPv4UnicastTest(IPv4UnicastTest):
     @autocleanup
     def doRunTest(self, pkt, mac_dest, tagged1, tagged2):
         self.runIPv4UnicastTest(
-            pkt, mac_dest, prefix_len=24, tagged1=tagged1, tagged2=tagged2)
+            pkt, mac_dest, prefix_len=24, tagged1=tagged1, tagged2=tagged2,
+            bidirectional=True)
 
     def runTest(self):
         print ""
@@ -119,7 +120,7 @@ class FabricIPv4UnicastGtpTest(IPv4UnicastTest):
               make_gtp(20 + len(inner_udp), 0xeeffc0f0) / \
               IP(src=HOST1_IPV4, dst=HOST2_IPV4) / \
               inner_udp
-        self.runIPv4UnicastTest(pkt, HOST2_MAC)
+        self.runIPv4UnicastTest(pkt, HOST2_MAC, bidirectional=True)
 
 
 class FabricIPv4UnicastGroupTest(FabricTest):
@@ -434,7 +435,7 @@ class FabricIPv4MplsGroupTest(IPv4UnicastTest):
     def doRunTest(self, pkt, mac_dest, tagged1):
         self.runIPv4UnicastTest(
             pkt, mac_dest, prefix_len=24, tagged1=tagged1, tagged2=False,
-            bidirectional=False, mpls=True)
+            mpls=True)
 
     def runTest(self):
         print ""
@@ -765,3 +766,24 @@ class FabricIntTransitFullTest(IntTest):
                         self.doRunTest(
                             pkt=int_pkt, tagged1=tagged[0], tagged2=tagged[1],
                             ignore_csum=1)
+
+
+@group("bng")
+class FabricPppoeUpstreamPopAndRouteTest(PppoeTest):
+
+    @autocleanup
+    def doRunTest(self, pkt, tagged2, mpls):
+        self.runUpstreamPopAndRouteV4Test(pkt, tagged2, mpls)
+
+    def runTest(self):
+        print ""
+        for out_tagged in [False, True]:
+            for mpls in [False, True]:
+                if mpls and out_tagged:
+                    continue
+                for pkt_type in ["tcp", "udp", "icmp"]:
+                    print "Testing %s packet, out_tagged=%s, mpls=%s ..." \
+                          % (pkt_type, out_tagged, mpls)
+                    pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
+                        pktlen=120)
+                    self.doRunTest(pkt, out_tagged, mpls)
