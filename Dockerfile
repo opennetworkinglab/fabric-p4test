@@ -36,8 +36,7 @@ LABEL description="Docker image to run PTF-based data plane tests for ONOS fabri
 LABEL url="https://github.com/opennetworkinglab/fabric-p4test"
 
 ENV RUNTIME_DEPS \
-    make \
-    python-setuptools
+    make
 RUN install_packages $RUNTIME_DEPS
 
 COPY --from=builder /output /
