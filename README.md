@@ -1,8 +1,8 @@
 # PTF tests for ONOS fabric.p4
 
-This project contains PTF-based tests for `fabric.p4`, a P4 program used by ONOS
-to provide connectivity in a leaf-spine fabric topology of P4Runtime-enabled
-switches:
+This project contains PTF-based tests for [fabric.p4][fabric.p4 code], a P4
+program used by ONOS to provide connectivity in a leaf-spine fabric topology of
+P4Runtime-enabled switches:
 
 <https://wiki.onosproject.org/x/wgBkAQ>
 
@@ -31,7 +31,8 @@ tests use the following steps.
     git clone https://github.com/opennetworkinglab/onos
     ```
 
-3. Set the `ONOS_ROOT` environment variable to the location where you just cloned the ONOS source:
+3. Set the `ONOS_ROOT` environment variable to the location where you just
+   cloned the ONOS source:
 
     ```
     export ONOS_ROOT=<path-to-onos>
@@ -43,9 +44,8 @@ tests use the following steps.
     ./docker_run.sh <profile-or-test-case>
     ```
 
-    `profile` is the `fabric.p4` profile to test. To learn more about
-    "profiles" check the instructions available inside the `tests/ptf`
-    directory.
+    To learn more about fabric.p4 "profiles" check
+    [these instructions][fabric profiles].
     
     For example, to run all test cases for all profiles:
 
@@ -84,3 +84,7 @@ For help running the tests please write to the P4 Brigade
 mailing list:
 
 <https://groups.google.com/a/onosproject.org/forum/#!forum/brigade-p4>
+
+
+[fabric.p4 code]: https://github.com/opennetworkinglab/onos/tree/master/pipelines/fabric/src/main/resources
+[fabric profiles]: tests/ptf/README.md#fabric-profiles
