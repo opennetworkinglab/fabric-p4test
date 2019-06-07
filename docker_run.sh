@@ -9,13 +9,12 @@ if [[ -z "${ONOS_ROOT}" ]]; then
     exit 1
 fi
 
-
 imageName=onosproject/fabric-p4test:latest
 runName=fabric-p4test-${RANDOM}
 
 function ctrl_c() {
         echo " Stopping ${runName}..."
-        docker stop ${runName}
+        docker stop -t0 ${runName}
 }
 trap ctrl_c INT
 
