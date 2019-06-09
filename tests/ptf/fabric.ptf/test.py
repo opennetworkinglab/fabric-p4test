@@ -772,18 +772,20 @@ class FabricIntTransitFullTest(IntTest):
 class FabricPppoeUpstreamPopAndRouteTest(PppoeTest):
 
     @autocleanup
-    def doRunTest(self, pkt, tagged2, mpls):
-        self.runUpstreamPopAndRouteV4Test(pkt, tagged2, mpls)
+    def doRunTest(self, pkt, tagged2, mpls, line_enabled):
+        self.runUpstreamPopAndRouteV4Test(pkt, tagged2, mpls, line_enabled)
 
     def runTest(self):
         print ""
-        for out_tagged in [False, True]:
-            for mpls in [False, True]:
-                if mpls and out_tagged:
-                    continue
-                for pkt_type in ["tcp", "udp", "icmp"]:
-                    print "Testing %s packet, out_tagged=%s, mpls=%s ..." \
-                          % (pkt_type, out_tagged, mpls)
-                    pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
-                        pktlen=120)
-                    self.doRunTest(pkt, out_tagged, mpls)
+        for line_enabled in [True, False]:
+            for out_tagged in [False, True]:
+                for mpls in [False, True]:
+                    if mpls and out_tagged:
+                        continue
+                    for pkt_type in ["tcp", "udp", "icmp"]:
+                        print "Testing %s packet, line_enabled=%s, " \
+                              "out_tagged=%s, mpls=%s ..." \
+                              % (pkt_type, line_enabled, out_tagged, mpls)
+                        pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
+                            pktlen=120)
+                        self.doRunTest(pkt, out_tagged, mpls, line_enabled)

@@ -559,7 +559,8 @@ class IPv4UnicastTest(FabricTest):
                            exp_pkt=None, exp_pkt_base=None,
                            bidirectional=False, mpls=False,
                            src_ipv4=None, dst_ipv4=None,
-                           routed_eth_types=(ETH_TYPE_IPV4,)):
+                           routed_eth_types=(ETH_TYPE_IPV4,),
+                           verify_pkt=True):
         """
         Execute an IPv4 unicast routing test.
         :param pkt: input packet
@@ -580,6 +581,8 @@ class IPv4UnicastTest(FabricTest):
             configure tables
         :param routed_eth_types: eth type values used to configure the
             classifier table to process packets via routing
+        :param verify_pkt: whether packets are expected to be forwarded or
+            dropped
         """
         if IP not in pkt or Ether not in pkt:
             self.fail("Cannot do IPv4 test with packet that is not IP")
@@ -683,7 +686,10 @@ class IPv4UnicastTest(FabricTest):
             exp_pkts.append(exp_pkt2)
             exp_ports.append(self.port1)
 
-        testutils.verify_each_packet_on_each_port(self, exp_pkts, exp_ports)
+        if verify_pkt:
+            testutils.verify_each_packet_on_each_port(self, exp_pkts, exp_ports)
+        else:
+            testutils.verify_no_other_packets(self)
 
 
 class MplsSegmentRoutingTest(FabricTest):
@@ -1083,14 +1089,11 @@ class PppoeTest(IPv4UnicastTest):
         for p in downstream_ports:
             self.set_port_type(p, direction="downstream")
 
-    def enable_upstream_line(self, s_tag, c_tag, ipv4_src, line_id,
-                             pppoe_session_id):
-        self.set_line_map(s_tag=s_tag, c_tag=c_tag, line_id=line_id)
-        self.set_ipv4_termination(line_id=line_id,
-                                  ipv4_src=ipv4_src,
-                                  pppoe_session_id=pppoe_session_id)
+    def read_pkt_upstream(self, type, line_id):
+        counter = self.read_counter("bng_ingress.upstream.c_" + type, line_id)
+        return counter.data.packet_count
 
-    def runUpstreamPopAndRouteV4Test(self, pkt, tagged2, mpls):
+    def runUpstreamPopAndRouteV4Test(self, pkt, tagged2, mpls, line_enabled=True):
         s_tag = vlan_id_outer = 888
         c_tag = vlan_id_inner = 777
         line_id = 99
@@ -1099,9 +1102,13 @@ class PppoeTest(IPv4UnicastTest):
 
         self.set_bng_ports(upstream_ports=[self.port1],
                            downstream_ports=[self.port2])
-        self.enable_upstream_line(
-            s_tag=s_tag, c_tag=c_tag, ipv4_src=pkt[IP].src,
-            line_id=line_id, pppoe_session_id=pppoe_session_id)
+
+        self.set_line_map(s_tag=s_tag, c_tag=c_tag, line_id=line_id)
+
+        if line_enabled:
+            self.set_ipv4_termination(line_id=line_id,
+                                      ipv4_src=pkt[IP].src,
+                                      pppoe_session_id=pppoe_session_id)
 
         # Input is the given packet with double VLAN tags and PPPoE headers.
         pppoe_pkt = pkt_add_pppoe(pkt, type=1, code=1,
@@ -1113,6 +1120,27 @@ class PppoeTest(IPv4UnicastTest):
         # VLAN and PPPoE headers.
         exp_pkt_base = pkt.copy()
 
+        # Read counters, will verify that later.
+        old_terminated = self.read_pkt_upstream("terminated", line_id)
+        old_dropped = self.read_pkt_upstream("dropped", line_id)
+        old_control = self.read_pkt_upstream("control", line_id)
+
         self.runIPv4UnicastTest(
             pkt=pppoe_pkt, dst_mac=next_hop_mac, exp_pkt_base=exp_pkt_base,
-            routed_eth_types=[ETH_TYPE_VLAN], tagged2=tagged2, mpls=mpls)
+            routed_eth_types=[ETH_TYPE_VLAN], tagged2=tagged2, mpls=mpls,
+            verify_pkt=line_enabled)
+
+        # Verify that packet counters were updated as expected.
+        new_terminated = self.read_pkt_upstream("terminated", line_id)
+        new_dropped = self.read_pkt_upstream("dropped", line_id)
+        new_control = self.read_pkt_upstream("control", line_id)
+
+        # no control plane packets here.
+        self.assertEqual(new_control, old_control)
+
+        if line_enabled:
+            self.assertEqual(new_terminated, old_terminated + 1)
+            self.assertEqual(new_dropped, old_dropped)
+        else:
+            self.assertEqual(new_terminated, old_terminated)
+            self.assertEqual(new_dropped, old_dropped + 1)
