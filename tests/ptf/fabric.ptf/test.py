@@ -793,14 +793,13 @@ class FabricPppoeUpstreamPopAndRouteTest(PppoeTest):
 
 
 @group("bng")
-class FabricPppoeUpstreamToControlPlaneTest(PppoeTest):
+class FabricPppoeControlPacketInTest(PppoeTest):
 
     @autocleanup
     def doRunTest(self, pkt, line_mapped):
-        self.runUpstreamToControlPlaneTest(pkt, line_mapped)
+        self.runControlPacketInTest(pkt, line_mapped)
 
     def runTest(self):
-
         # FIXME: using a dummy payload will generate malformed PPP packets,
         #  instead we should use appropriate PPP protocol values and PPPoED
         #  payload (tags)
@@ -809,15 +808,9 @@ class FabricPppoeUpstreamToControlPlaneTest(PppoeTest):
             "PADI": Ether(src=HOST1_MAC, dst=BROADCAST_MAC) / \
                     PPPoED(version=1, type=1, code=PPPOED_CODE_PADI) / \
                     "dummy pppoed payload",
-            "PADO": Ether(src=SWITCH_MAC, dst=HOST1_MAC) / \
-                    PPPoED(version=1, type=1, code=PPPOED_CODE_PADO) / \
-                    "dummy pppoed payload",
             "PADR": Ether(src=HOST1_MAC, dst=SWITCH_MAC) / \
                     PPPoED(version=1, type=1, code=PPPOED_CODE_PADR) / \
                     "dummy pppoed payload",
-            "PADS": Ether(src=SWITCH_MAC, dst=HOST1_MAC) / \
-                    PPPoED(version=1, type=1, code=PPPOED_CODE_PADS) / \
-                    "dummy pppoed payload"
         }
 
         print ""
@@ -826,3 +819,30 @@ class FabricPppoeUpstreamToControlPlaneTest(PppoeTest):
                 print "Testing %s packet, line_mapped=%s..." \
                       % (pkt_type, line_mapped)
                 self.doRunTest(pkt, line_mapped)
+
+
+@group("bng")
+class FabricPppoeControlPacketOutTest(PppoeTest):
+
+    @autocleanup
+    def doRunTest(self, pkt):
+        self.runControlPacketOutTest(pkt)
+
+    def runTest(self):
+        # FIXME: using a dummy payload will generate malformed PPP packets,
+        #  instead we should use appropriate PPP protocol values and PPPoED
+        #  payload (tags)
+        # https://www.cloudshark.org/captures/f79aea31ad53
+        pkts = {
+            "PADO": Ether(src=SWITCH_MAC, dst=HOST1_MAC) / \
+                    PPPoED(version=1, type=1, code=PPPOED_CODE_PADO) / \
+                    "dummy pppoed payload",
+            "PADS": Ether(src=SWITCH_MAC, dst=HOST1_MAC) / \
+                    PPPoED(version=1, type=1, code=PPPOED_CODE_PADS) / \
+                    "dummy pppoed payload"
+        }
+
+        print ""
+        for pkt_type, pkt in pkts.items():
+            print "Testing %s packet..." % pkt_type
+            self.doRunTest(pkt)

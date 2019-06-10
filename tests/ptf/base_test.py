@@ -307,6 +307,17 @@ class P4RuntimeTest(BaseTest):
         if not match_exp_pkt(exp_pkt, rx_pkt):
             self.fail("Received packet-in is not the expected one\n" + format_pkt_match(rx_pkt, exp_pkt))
 
+    def verify_packet_out(self, pkt, out_port):
+        port_hex = stringify(out_port, 2)
+        packet_out = p4runtime_pb2.PacketOut()
+        packet_out.payload = str(pkt)
+        egress_physical_port = packet_out.metadata.add()
+        egress_physical_port.metadata_id = 1
+        egress_physical_port.value = port_hex
+
+        self.send_packet_out(packet_out)
+        testutils.verify_packet(self, pkt, out_port)
+
     def get_stream_packet(self, type_, timeout=1):
         start = time.time()
         try:

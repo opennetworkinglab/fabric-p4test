@@ -751,15 +751,7 @@ class MplsSegmentRoutingTest(FabricTest):
 class PacketOutTest(FabricTest):
     def runPacketOutTest(self, pkt):
         for port in [self.port1, self.port2]:
-            port_hex = stringify(port, 2)
-            packet_out = p4runtime_pb2.PacketOut()
-            packet_out.payload = str(pkt)
-            egress_physical_port = packet_out.metadata.add()
-            egress_physical_port.metadata_id = 1
-            egress_physical_port.value = port_hex
-
-            self.send_packet_out(packet_out)
-            testutils.verify_packet(self, pkt, port)
+            self.verify_packet_out(pkt, out_port=port)
         testutils.verify_no_other_packets(self)
 
 
@@ -1171,7 +1163,7 @@ class PppoeTest(IPv4UnicastTest):
             self.assertEqual(new_terminated, old_terminated)
             self.assertEqual(new_dropped, old_dropped + 1)
 
-    def runUpstreamToControlPlaneTest(self, pppoed_pkt, line_mapped=True):
+    def runControlPacketInTest(self, pppoed_pkt, line_mapped=True):
         s_tag = vlan_id_outer = 888
         c_tag = vlan_id_inner = 777
 
@@ -1207,3 +1199,17 @@ class PppoeTest(IPv4UnicastTest):
         self.assertEqual(new_terminated, old_terminated)
         self.assertEqual(new_dropped, old_dropped)
         self.assertEqual(new_control, old_control + 1)
+
+    def runControlPacketOutTest(self, pppoed_pkt):
+        vlan_id_outer = 888
+        vlan_id_inner = 777
+
+        self.bng_setup(upstream_ports=[self.port1],
+                       downstream_ports=[self.port2])
+
+        # Input is the given packet with double VLAN tags and PPPoE headers.
+        pppoed_pkt = pkt_add_vlan(pppoed_pkt, vlan_vid=vlan_id_inner)
+        pppoed_pkt = pkt_add_vlan(pppoed_pkt, vlan_vid=vlan_id_outer)
+
+        self.verify_packet_out(pppoed_pkt, self.port1)
+        testutils.verify_no_other_packets(self)
