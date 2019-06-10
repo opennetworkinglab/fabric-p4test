@@ -332,14 +332,14 @@ def main():
                                  port_map_path=args.port_map,
                                  grpc_port=grpc_port,
                                  cpu_port=args.cpu_port,
-                                 loglevel='debug')
+                                 loglevel='trace')
             bmv2_sw.start()
         elif device == 'stratum-bmv2':
             bmv2_sw = Bmv2Switch(device_id=args.device_id,
                                  port_map_path=args.port_map,
                                  grpc_port=grpc_port,
                                  cpu_port=args.cpu_port,
-                                 loglevel='debug',
+                                 loglevel='trace',
                                  is_stratum=True)
             bmv2_sw.start()
 

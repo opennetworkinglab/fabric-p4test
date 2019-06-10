@@ -17,6 +17,7 @@
 from itertools import combinations
 
 from ptf.testutils import group
+from scapy.layers.ppp import PPPoED
 
 from base_test import autocleanup
 from fabric_test import *
@@ -789,3 +790,39 @@ class FabricPppoeUpstreamPopAndRouteTest(PppoeTest):
                         pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
                             pktlen=120)
                         self.doRunTest(pkt, out_tagged, mpls, line_enabled)
+
+
+@group("bng")
+class FabricPppoeUpstreamToControlPlaneTest(PppoeTest):
+
+    @autocleanup
+    def doRunTest(self, pkt, line_mapped):
+        self.runUpstreamToControlPlaneTest(pkt, line_mapped)
+
+    def runTest(self):
+
+        # FIXME: using a dummy payload will generate malformed PPP packets,
+        #  instead we should use appropriate PPP protocol values and PPPoED
+        #  payload (tags)
+        # https://www.cloudshark.org/captures/f79aea31ad53
+        pkts = {
+            "PADI": Ether(src=HOST1_MAC, dst=BROADCAST_MAC) / \
+                    PPPoED(version=1, type=1, code=PPPOED_CODE_PADI) / \
+                    "dummy pppoed payload",
+            "PADO": Ether(src=SWITCH_MAC, dst=HOST1_MAC) / \
+                    PPPoED(version=1, type=1, code=PPPOED_CODE_PADO) / \
+                    "dummy pppoed payload",
+            "PADR": Ether(src=HOST1_MAC, dst=SWITCH_MAC) / \
+                    PPPoED(version=1, type=1, code=PPPOED_CODE_PADR) / \
+                    "dummy pppoed payload",
+            "PADS": Ether(src=SWITCH_MAC, dst=HOST1_MAC) / \
+                    PPPoED(version=1, type=1, code=PPPOED_CODE_PADS) / \
+                    "dummy pppoed payload"
+        }
+
+        print ""
+        for line_mapped in [True, False]:
+            for pkt_type, pkt in pkts.items():
+                print "Testing %s packet, line_mapped=%s..." \
+                      % (pkt_type, line_mapped)
+                self.doRunTest(pkt, line_mapped)

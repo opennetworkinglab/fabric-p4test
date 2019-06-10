@@ -54,6 +54,7 @@ INT_META_HDR = xnt.INT_META_HDR
 INT_L45_HEAD = xnt.INT_L45_HEAD
 INT_L45_TAIL = xnt.INT_L45_TAIL
 
+BROADCAST_MAC = ":".join(["ff"] * 6)
 MAC_MASK = ":".join(["ff"] * 6)
 SWITCH_MAC = "00:00:00:00:aa:01"
 SWITCH_IPV4 = "192.168.0.1"
@@ -103,6 +104,20 @@ INT_INS_TO_NAME = {
     INT_EG_PORT_TX: "eg_port_tx"
 
 }
+
+PPPOED_CODE_PADI = 0x09
+PPPOED_CODE_PADO = 0x07
+PPPOED_CODE_PADR = 0x19
+PPPOED_CODE_PADS = 0x65
+PPPOED_CODE_PADT = 0xa7
+
+PPPOED_CODES = (
+    PPPOED_CODE_PADI,
+    PPPOED_CODE_PADO,
+    PPPOED_CODE_PADR,
+    PPPOED_CODE_PADS,
+    PPPOED_CODE_PADT,
+)
 
 
 def make_gtp(msg_len, teid, flags=0x30, msg_type=0xff):
@@ -1064,6 +1079,7 @@ class PppoeTest(IPv4UnicastTest):
             "bng_ingress.set_" + direction, [])
 
     def set_line_map(self, s_tag, c_tag, line_id):
+        assert line_id != 0, "Line ID cannot be 0"
         s_tag_ = stringify(s_tag, 2)
         c_tag_ = stringify(c_tag, 2)
         line_id_ = stringify(line_id, 4)
@@ -1083,29 +1099,39 @@ class PppoeTest(IPv4UnicastTest):
              self.Exact("pppoe_session_id", pppoe_session_id_)],
             "bng_ingress.upstream.accept_and_pop_v4", [])
 
-    def set_bng_ports(self, upstream_ports, downstream_ports):
+    def set_upstream_pppoe_cp_table(self, pppoe_codes=()):
+        for code in pppoe_codes:
+            code_ = stringify(code, 1)
+            self.send_request_add_entry_to_action(
+                "bng_ingress.upstream.t_pppoe_cp",
+                [self.Exact("pppoe_code", code_)],
+                "bng_to_cp", [], DEFAULT_PRIORITY)
+
+    def bng_setup(self, upstream_ports, downstream_ports,
+                  pppoe_cp_codes=PPPOED_CODES):
         for p in upstream_ports:
             self.set_port_type(p, direction="upstream")
         for p in downstream_ports:
             self.set_port_type(p, direction="downstream")
+        self.set_upstream_pppoe_cp_table(pppoe_codes=pppoe_cp_codes)
 
-    def read_pkt_upstream(self, type, line_id):
+    def read_pkt_count_upstream(self, type, line_id):
         counter = self.read_counter("bng_ingress.upstream.c_" + type, line_id)
         return counter.data.packet_count
 
-    def runUpstreamPopAndRouteV4Test(self, pkt, tagged2, mpls, line_enabled=True):
+    def runUpstreamPopAndRouteV4Test(self, pkt, tagged2, mpls, line_terminated=True):
         s_tag = vlan_id_outer = 888
         c_tag = vlan_id_inner = 777
         line_id = 99
         pppoe_session_id = 0xbeac
         next_hop_mac = HOST1_MAC
 
-        self.set_bng_ports(upstream_ports=[self.port1],
-                           downstream_ports=[self.port2])
+        self.bng_setup(upstream_ports=[self.port1],
+                       downstream_ports=[self.port2])
 
         self.set_line_map(s_tag=s_tag, c_tag=c_tag, line_id=line_id)
 
-        if line_enabled:
+        if line_terminated:
             self.set_ipv4_termination(line_id=line_id,
                                       ipv4_src=pkt[IP].src,
                                       pppoe_session_id=pppoe_session_id)
@@ -1116,31 +1142,68 @@ class PppoeTest(IPv4UnicastTest):
         pppoe_pkt = pkt_add_vlan(pppoe_pkt, vlan_vid=vlan_id_inner)
         pppoe_pkt = pkt_add_vlan(pppoe_pkt, vlan_vid=vlan_id_outer)
 
-        # Build expected packet from the input one, as if it was routed without
-        # VLAN and PPPoE headers.
+        # Build expected packet from the input one, we expect it to be routed as
+        # if it was without VLAN and PPPoE headers.
         exp_pkt_base = pkt.copy()
 
-        # Read counters, will verify that later.
-        old_terminated = self.read_pkt_upstream("terminated", line_id)
-        old_dropped = self.read_pkt_upstream("dropped", line_id)
-        old_control = self.read_pkt_upstream("control", line_id)
+        # Read counters, will verify their values later.
+        old_terminated = self.read_pkt_count_upstream("terminated", line_id)
+        old_dropped = self.read_pkt_count_upstream("dropped", line_id)
+        old_control = self.read_pkt_count_upstream("control", line_id)
 
         self.runIPv4UnicastTest(
             pkt=pppoe_pkt, dst_mac=next_hop_mac, exp_pkt_base=exp_pkt_base,
             routed_eth_types=[ETH_TYPE_VLAN], tagged2=tagged2, mpls=mpls,
-            verify_pkt=line_enabled)
+            verify_pkt=line_terminated)
 
         # Verify that packet counters were updated as expected.
-        new_terminated = self.read_pkt_upstream("terminated", line_id)
-        new_dropped = self.read_pkt_upstream("dropped", line_id)
-        new_control = self.read_pkt_upstream("control", line_id)
+        new_terminated = self.read_pkt_count_upstream("terminated", line_id)
+        new_dropped = self.read_pkt_count_upstream("dropped", line_id)
+        new_control = self.read_pkt_count_upstream("control", line_id)
 
         # no control plane packets here.
         self.assertEqual(new_control, old_control)
 
-        if line_enabled:
+        if line_terminated:
             self.assertEqual(new_terminated, old_terminated + 1)
             self.assertEqual(new_dropped, old_dropped)
         else:
             self.assertEqual(new_terminated, old_terminated)
             self.assertEqual(new_dropped, old_dropped + 1)
+
+    def runUpstreamToControlPlaneTest(self, pppoed_pkt, line_mapped=True):
+        s_tag = vlan_id_outer = 888
+        c_tag = vlan_id_inner = 777
+
+        self.bng_setup(upstream_ports=[self.port1],
+                       downstream_ports=[self.port2])
+
+        # If a line mapping is not provided, we expect packets to be processed
+        # with line ID 0 (e.g. counters updated at index 0).
+        line_id = 0
+        if line_mapped:
+            line_id = 99
+            self.set_line_map(s_tag=s_tag, c_tag=c_tag, line_id=line_id)
+
+        # Input is the given packet with double VLAN tags and PPPoE headers.
+        pppoed_pkt = pkt_add_vlan(pppoed_pkt, vlan_vid=vlan_id_inner)
+        pppoed_pkt = pkt_add_vlan(pppoed_pkt, vlan_vid=vlan_id_outer)
+
+        # Read counters, will verify their values later.
+        old_terminated = self.read_pkt_count_upstream("terminated", line_id)
+        old_dropped = self.read_pkt_count_upstream("dropped", line_id)
+        old_control = self.read_pkt_count_upstream("control", line_id)
+
+        testutils.send_packet(self, self.port1, str(pppoed_pkt))
+        self.verify_packet_in(pppoed_pkt, self.port1)
+        testutils.verify_no_other_packets(self)
+
+        # Verify that packet counters were updated as expected.
+        new_terminated = self.read_pkt_count_upstream("terminated", line_id)
+        new_dropped = self.read_pkt_count_upstream("dropped", line_id)
+        new_control = self.read_pkt_count_upstream("control", line_id)
+
+        # Only control plane packets.
+        self.assertEqual(new_terminated, old_terminated)
+        self.assertEqual(new_dropped, old_dropped)
+        self.assertEqual(new_control, old_control + 1)
