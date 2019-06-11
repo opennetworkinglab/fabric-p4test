@@ -640,15 +640,14 @@ class P4RuntimeTest(BaseTest):
         return req, self.write_request(req, store=(mk is not None))
 
     def read_counter(self, c_name, c_index):
-        entity = p4runtime_pb2.Entity()
+        req = self.get_new_read_request()
+        entity = req.entities.add()
         counter_entry = entity.counter_entry
         c_id = self.get_counter_id(c_name)
         counter_entry.counter_id = c_id
         index = counter_entry.index
         index.index = c_index
 
-        req = self.get_new_read_request()
-        req.entities.append(entity)
         for entity in self.read_request(req):
             if entity.HasField("counter_entry"):
                 return entity.counter_entry
