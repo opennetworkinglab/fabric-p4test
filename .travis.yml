@@ -11,11 +11,11 @@ python:
 env:
   matrix:
     - ONOS_BRANCH: master
-      PROFILES: all
+      PROFILES: "'all'"
     - ONOS_BRANCH: onos-2.1
-      PROFILES: fabric fabric-spgw fabric-int fabric-spgw-int
+      PROFILES: "'fabric fabric-spgw fabric-int fabric-spgw-int'"
     - ONOS_BRANCH: onos-1.15
-      PROFILES: fabric fabric-spgw fabric-int fabric-spgw-int
+      PROFILES: "'fabric fabric-spgw fabric-int fabric-spgw-int'"
 
 before_install:
   - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
