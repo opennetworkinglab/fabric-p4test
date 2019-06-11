@@ -653,7 +653,7 @@ class IPv4UnicastTest(FabricTest):
             exp_pkt = pkt.copy() if not exp_pkt_base else exp_pkt_base
             exp_pkt = pkt_route(exp_pkt, next_hop_mac)
             if not mpls:
-               exp_pkt = pkt_decrement_ttl(exp_pkt)
+                exp_pkt = pkt_decrement_ttl(exp_pkt)
             if tagged2 and Dot1Q not in exp_pkt:
                 exp_pkt = pkt_add_vlan(exp_pkt, vlan_vid=vlan2)
             if mpls:
@@ -1045,7 +1045,7 @@ class PppoeTest(IPv4UnicastTest):
         assert line_id != 0
         assert pppoe_session_id != 0
 
-        c_tag_ = stringify(c_tag, 2) # inner
+        c_tag_ = stringify(c_tag, 2)  # inner
         line_id_ = stringify(line_id, 4)
         ipv4_addr_ = ipv4_to_binary(ipv4_addr)
         pppoe_session_id_ = stringify(pppoe_session_id, 2)
