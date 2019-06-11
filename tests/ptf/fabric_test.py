@@ -1063,13 +1063,6 @@ class IntTest(IPv4UnicastTest):
 
 class PppoeTest(IPv4UnicastTest):
 
-    def set_port_type(self, ingress_port, direction):
-        ingress_port_ = stringify(ingress_port, 2)
-        self.send_request_add_entry_to_action(
-            "bng_ingress.t_set_type",
-            [self.Exact("ig_port", ingress_port_)],
-            "bng_ingress.set_" + direction, [])
-
     def set_line_map(self, s_tag, c_tag, line_id):
         assert line_id != 0, "Line ID cannot be 0"
         s_tag_ = stringify(s_tag, 2)
@@ -1085,11 +1078,11 @@ class PppoeTest(IPv4UnicastTest):
         ipv4_src_ = ipv4_to_binary(ipv4_src)
         pppoe_session_id_ = stringify(pppoe_session_id, 2)
         self.send_request_add_entry_to_action(
-            "bng_ingress.upstream.t_pppoe_term_ipv4",
+            "bng_ingress.upstream.t_pppoe_term_v4",
             [self.Exact("line_id", line_id_),
              self.Exact("ipv4_src", ipv4_src_),
              self.Exact("pppoe_session_id", pppoe_session_id_)],
-            "bng_ingress.upstream.accept_and_pop_v4", [])
+            "bng_ingress.upstream.term_enabled_v4", [])
 
     def set_upstream_pppoe_cp_table(self, pppoe_codes=()):
         for code in pppoe_codes:
@@ -1097,14 +1090,9 @@ class PppoeTest(IPv4UnicastTest):
             self.send_request_add_entry_to_action(
                 "bng_ingress.upstream.t_pppoe_cp",
                 [self.Exact("pppoe_code", code_)],
-                "bng_to_cp", [], DEFAULT_PRIORITY)
+                "bng_ingress.upstream.punt_to_cpu", [], DEFAULT_PRIORITY)
 
-    def bng_setup(self, upstream_ports, downstream_ports,
-                  pppoe_cp_codes=PPPOED_CODES):
-        for p in upstream_ports:
-            self.set_port_type(p, direction="upstream")
-        for p in downstream_ports:
-            self.set_port_type(p, direction="downstream")
+    def bng_setup(self, pppoe_cp_codes=PPPOED_CODES):
         self.set_upstream_pppoe_cp_table(pppoe_codes=pppoe_cp_codes)
 
     def read_pkt_count_upstream(self, type, line_id):
@@ -1118,8 +1106,7 @@ class PppoeTest(IPv4UnicastTest):
         pppoe_session_id = 0xbeac
         next_hop_mac = HOST1_MAC
 
-        self.bng_setup(upstream_ports=[self.port1],
-                       downstream_ports=[self.port2])
+        self.bng_setup()
 
         self.set_line_map(s_tag=s_tag, c_tag=c_tag, line_id=line_id)
 
@@ -1167,8 +1154,7 @@ class PppoeTest(IPv4UnicastTest):
         s_tag = vlan_id_outer = 888
         c_tag = vlan_id_inner = 777
 
-        self.bng_setup(upstream_ports=[self.port1],
-                       downstream_ports=[self.port2])
+        self.bng_setup()
 
         # If a line mapping is not provided, we expect packets to be processed
         # with line ID 0 (e.g. counters updated at index 0).
@@ -1204,8 +1190,7 @@ class PppoeTest(IPv4UnicastTest):
         vlan_id_outer = 888
         vlan_id_inner = 777
 
-        self.bng_setup(upstream_ports=[self.port1],
-                       downstream_ports=[self.port2])
+        self.bng_setup()
 
         # Input is the given packet with double VLAN tags and PPPoE headers.
         pppoed_pkt = pkt_add_vlan(pppoed_pkt, vlan_vid=vlan_id_inner)
