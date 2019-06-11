@@ -90,8 +90,7 @@ class FabricIPv4UnicastTest(IPv4UnicastTest):
     @autocleanup
     def doRunTest(self, pkt, mac_dest, tagged1, tagged2):
         self.runIPv4UnicastTest(
-            pkt, mac_dest, prefix_len=24, tagged1=tagged1, tagged2=tagged2,
-            bidirectional=True)
+            pkt, mac_dest, prefix_len=24, tagged1=tagged1, tagged2=tagged2)
 
     def runTest(self):
         print ""
@@ -121,7 +120,7 @@ class FabricIPv4UnicastGtpTest(IPv4UnicastTest):
               make_gtp(20 + len(inner_udp), 0xeeffc0f0) / \
               IP(src=HOST1_IPV4, dst=HOST2_IPV4) / \
               inner_udp
-        self.runIPv4UnicastTest(pkt, HOST2_MAC, bidirectional=True)
+        self.runIPv4UnicastTest(pkt, next_hop_mac=HOST2_MAC)
 
 
 class FabricIPv4UnicastGroupTest(FabricTest):
@@ -770,11 +769,11 @@ class FabricIntTransitFullTest(IntTest):
 
 
 @group("bng")
-class FabricPppoeUpstreamPopAndRouteTest(PppoeTest):
+class FabricPppoeUpstreamTest(PppoeTest):
 
     @autocleanup
     def doRunTest(self, pkt, tagged2, mpls, line_enabled):
-        self.runUpstreamPopAndRouteV4Test(pkt, tagged2, mpls, line_enabled)
+        self.runUpstreamV4Test(pkt, tagged2, mpls, line_enabled)
 
     def runTest(self):
         print ""
@@ -846,3 +845,23 @@ class FabricPppoeControlPacketOutTest(PppoeTest):
         for pkt_type, pkt in pkts.items():
             print "Testing %s packet..." % pkt_type
             self.doRunTest(pkt)
+
+
+@group("bng")
+class FabricPppoeDownstreamTest(PppoeTest):
+
+    @autocleanup
+    def doRunTest(self, pkt, in_tagged, line_enabled):
+        self.runDownstreamV4Test(pkt, in_tagged, line_enabled)
+
+    def runTest(self):
+        print ""
+        for line_enabled in [True, False]:
+            for in_tagged in [False, True]:
+                for pkt_type in ["tcp", "udp", "icmp"]:
+                    print "Testing %s packet, line_enabled=%s, " \
+                          "in_tagged=%s..." \
+                          % (pkt_type, line_enabled, in_tagged)
+                    pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
+                        pktlen=120)
+                    self.doRunTest(pkt, in_tagged, line_enabled)

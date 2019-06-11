@@ -105,6 +105,8 @@ INT_INS_TO_NAME = {
 
 }
 
+PPPOE_CODE_SESSION_STAGE = 0x00
+
 PPPOED_CODE_PADI = 0x09
 PPPOED_CODE_PADO = 0x07
 PPPOED_CODE_PADR = 0x19
@@ -569,17 +571,16 @@ class ArpBroadcastTest(FabricTest):
 
 class IPv4UnicastTest(FabricTest):
 
-    def runIPv4UnicastTest(self, pkt, dst_mac,
+    def runIPv4UnicastTest(self, pkt, next_hop_mac,
                            tagged1=False, tagged2=False, prefix_len=24,
-                           exp_pkt=None, exp_pkt_base=None,
-                           bidirectional=False, mpls=False,
-                           src_ipv4=None, dst_ipv4=None,
+                           exp_pkt=None, exp_pkt_base=None, next_id=None,
+                           next_vlan=None, mpls=False, dst_ipv4=None,
                            routed_eth_types=(ETH_TYPE_IPV4,),
                            verify_pkt=True):
         """
         Execute an IPv4 unicast routing test.
         :param pkt: input packet
-        :param dst_mac: MAC address of the next hop
+        :param next_hop_mac: MAC address of the next hop
         :param tagged1: if the input port should expect VLAN tagged packets
         :param tagged2: if the output port should expect VLAN tagged packets
         :param prefix_len: prefix length to use in the routing table
@@ -587,11 +588,10 @@ class IPv4UnicastTest(FabricTest):
             input packet
         :param exp_pkt_base: if not none, it will be used to build the expected
             output packet.
-        :param bidirectional: do a bidirectional forwarding test
+        :param next_id: value to use as next ID
+        :param next_vlan: value to use as next VLAN
         :param mpls: whether the packet should be routed to the spines using
             MPLS SR
-        :param src_ipv4: if not none, this value will be used as IPv4 src to
-            configure tables
         :param dst_ipv4: if not none, this value will be used as IPv4 dst to
             configure tables
         :param routed_eth_types: eth type values used to configure the
@@ -601,8 +601,6 @@ class IPv4UnicastTest(FabricTest):
         """
         if IP not in pkt or Ether not in pkt:
             self.fail("Cannot do IPv4 test with packet that is not IP")
-        if mpls and bidirectional:
-            self.fail("Cannot do bidirectional test with MPLS")
         if mpls and tagged2:
             self.fail("Cannot do MPLS test with egress port tagged (tagged2)")
 
@@ -621,17 +619,13 @@ class IPv4UnicastTest(FabricTest):
             vlan2 = DEFAULT_VLAN
             assert not tagged2
         else:
-            vlan2 = VLAN_ID_2
+            vlan2 = VLAN_ID_2 if next_vlan is None else next_vlan
 
-        next_id1 = 10
-        next_id2 = 20
-        group_id2 = 22
-        label2 = MPLS_LABEL_2
-        if src_ipv4 is None:
-            src_ipv4 = pkt[IP].src
+        next_id = 100 if next_id is None else next_id
+        group_id = next_id
+        mpls_label = MPLS_LABEL_2
         if dst_ipv4 is None:
             dst_ipv4 = pkt[IP].dst
-        src_mac = pkt[Ether].src
         switch_mac = pkt[Ether].dst
 
         # Setup ports.
@@ -642,69 +636,38 @@ class IPv4UnicastTest(FabricTest):
         for eth_type in routed_eth_types:
             self.set_forwarding_type(self.port1, switch_mac, eth_type,
                                      FORWARDING_TYPE_UNICAST_IPV4)
-            if bidirectional:
-                self.set_forwarding_type(self.port2, switch_mac, eth_type,
-                                         FORWARDING_TYPE_UNICAST_IPV4)
 
         # Routing entry.
-        self.add_forwarding_routing_v4_entry(dst_ipv4, prefix_len, next_id2)
-        if bidirectional:
-            self.add_forwarding_routing_v4_entry(src_ipv4, prefix_len, next_id1)
+        self.add_forwarding_routing_v4_entry(dst_ipv4, prefix_len, next_id)
 
         if not mpls:
-            self.add_next_routing(next_id2, self.port2, switch_mac, dst_mac)
-            self.add_next_vlan(next_id2, vlan2)
-            if bidirectional:
-                self.add_next_routing(next_id1, self.port1, switch_mac, src_mac)
-                self.add_next_vlan(next_id1, vlan1)
+            self.add_next_routing(next_id, self.port2, switch_mac, next_hop_mac)
+            self.add_next_vlan(next_id, vlan2)
         else:
-            params2 = [self.port2, switch_mac, dst_mac, label2]
-            self.add_next_mpls_routing_group(next_id2, group_id2, [params2])
-            self.add_next_vlan(next_id2, DEFAULT_VLAN)
+            params = [self.port2, switch_mac, next_hop_mac, mpls_label]
+            self.add_next_mpls_routing_group(next_id, group_id, [params])
+            self.add_next_vlan(next_id, DEFAULT_VLAN)
 
         if exp_pkt is None:
             # Build exp pkt using the input one.
             exp_pkt = pkt.copy() if not exp_pkt_base else exp_pkt_base
-            exp_pkt[Ether].src = switch_mac
-            exp_pkt[Ether].dst = dst_mac
+            exp_pkt = pkt_route(exp_pkt, next_hop_mac)
             if not mpls:
-                exp_pkt[IP].ttl = exp_pkt[IP].ttl - 1
-            if tagged2:
+               exp_pkt = pkt_decrement_ttl(exp_pkt)
+            if tagged2 and Dot1Q not in exp_pkt:
                 exp_pkt = pkt_add_vlan(exp_pkt, vlan_vid=vlan2)
             if mpls:
-                exp_pkt = pkt_add_mpls(exp_pkt, label=label2, ttl=DEFAULT_MPLS_TTL)
+                exp_pkt = pkt_add_mpls(exp_pkt, label=mpls_label,
+                                       ttl=DEFAULT_MPLS_TTL)
 
-        pkt2 = pkt.copy()
-        pkt2[Ether].src = dst_mac
-        pkt2[IP].src = dst_ipv4
-        pkt2[IP].dst = src_ipv4
-
-        exp_pkt2 = pkt2.copy()
-        exp_pkt2[Ether].src = switch_mac
-        exp_pkt2[Ether].dst = src_mac
-        exp_pkt2[IP].ttl = exp_pkt2[IP].ttl - 1
-
-        if tagged1:
-            if not pkt_is_tagged:
-                pkt = pkt_add_vlan(pkt, vlan_vid=vlan1)
-            exp_pkt2 = pkt_add_vlan(exp_pkt2, vlan_vid=vlan1)
-
-        if tagged2:
-            pkt2 = pkt_add_vlan(pkt2, vlan_vid=vlan2)
+        if tagged1 and not pkt_is_tagged:
+            pkt = pkt_add_vlan(pkt, vlan_vid=vlan1)
 
         testutils.send_packet(self, self.port1, str(pkt))
-        exp_pkts = [exp_pkt]
-        exp_ports = [self.port2]
-
-        if bidirectional:
-            testutils.send_packet(self, self.port2, str(pkt2))
-            exp_pkts.append(exp_pkt2)
-            exp_ports.append(self.port1)
 
         if verify_pkt:
-            testutils.verify_each_packet_on_each_port(self, exp_pkts, exp_ports)
-        else:
-            testutils.verify_no_other_packets(self)
+            testutils.verify_packet(self, exp_pkt, self.port2)
+        testutils.verify_no_other_packets(self)
 
 
 class MplsSegmentRoutingTest(FabricTest):
@@ -813,8 +776,8 @@ class SpgwSimpleTest(IPv4UnicastTest):
         if tagged2:
             exp_pkt = pkt_add_vlan(exp_pkt, VLAN_ID_2)
 
-        self.runIPv4UnicastTest(pkt=gtp_pkt, src_ipv4=ue_out_pkt[IP].src,
-                                dst_ipv4=ue_out_pkt[IP].dst, dst_mac=dst_mac,
+        self.runIPv4UnicastTest(pkt=gtp_pkt, dst_ipv4=ue_out_pkt[IP].dst,
+                                next_hop_mac=dst_mac,
                                 prefix_len=32, exp_pkt=exp_pkt,
                                 tagged1=tagged1, tagged2=tagged2, mpls=mpls)
 
@@ -838,7 +801,7 @@ class SpgwSimpleTest(IPv4UnicastTest):
         if tagged2:
             exp_pkt = pkt_add_vlan(exp_pkt, VLAN_ID_2)
 
-        self.runIPv4UnicastTest(pkt=pkt, dst_mac=dst_mac,
+        self.runIPv4UnicastTest(pkt=pkt, next_hop_mac=dst_mac,
                                 prefix_len=32, exp_pkt=exp_pkt,
                                 tagged1=tagged1, tagged2=tagged2, mpls=mpls)
 
@@ -995,7 +958,7 @@ class IntTest(IPv4UnicastTest):
                 mask_pkt.set_do_not_care(csum_offset * 8, 2 * 8)
             exp_pkt = mask_pkt
 
-        self.runIPv4UnicastTest(pkt=pkt, dst_mac=HOST2_MAC, prefix_len=32,
+        self.runIPv4UnicastTest(pkt=pkt, next_hop_mac=HOST2_MAC, prefix_len=32,
                                 exp_pkt=exp_pkt,
                                 tagged1=tagged1, tagged2=tagged2, mpls=mpls)
 
@@ -1056,33 +1019,73 @@ class IntTest(IPv4UnicastTest):
                 mask_pkt.set_do_not_care(offset_metadata * 8, masked_ins_cnt * 4 * 8)
             exp_pkt = mask_pkt
 
-        self.runIPv4UnicastTest(pkt=pkt, dst_mac=HOST2_MAC,
+        self.runIPv4UnicastTest(pkt=pkt, next_hop_mac=HOST2_MAC,
                                 tagged1=tagged1, tagged2=tagged2, mpls=mpls,
                                 prefix_len=32, exp_pkt=exp_pkt)
 
 
 class PppoeTest(IPv4UnicastTest):
 
-    def set_line_map(self, s_tag, c_tag, line_id):
-        assert line_id != 0, "Line ID cannot be 0"
-        s_tag_ = stringify(s_tag, 2)
-        c_tag_ = stringify(c_tag, 2)
+    def set_upstream_line_map(self, s_tag, c_tag, line_id):
+        assert line_id != 0
+        s_tag_ = stringify(s_tag, 2)  # outer
+        c_tag_ = stringify(c_tag, 2)  # inner
         line_id_ = stringify(line_id, 4)
+
+        # Upstream
         self.send_request_add_entry_to_action(
             "bng_ingress.upstream.t_line_map",
             [self.Exact("s_tag", s_tag_), self.Exact("c_tag", c_tag_)],
             "bng_ingress.upstream.set_line", [("line_id", line_id_)])
 
-    def set_ipv4_termination(self, line_id, ipv4_src, pppoe_session_id):
+    def setup_line_v4(self, s_tag, c_tag, line_id, ipv4_addr,
+                      pppoe_session_id, ds_next_id, enabled=True):
+        assert s_tag != 0
+        assert c_tag != 0
+        assert line_id != 0
+        assert pppoe_session_id != 0
+
+        c_tag_ = stringify(c_tag, 2) # inner
         line_id_ = stringify(line_id, 4)
-        ipv4_src_ = ipv4_to_binary(ipv4_src)
+        ipv4_addr_ = ipv4_to_binary(ipv4_addr)
         pppoe_session_id_ = stringify(pppoe_session_id, 2)
+        ds_next_id_ = stringify(ds_next_id, 4)
+
+        # Upstream
+        self.set_upstream_line_map(s_tag=s_tag, c_tag=c_tag, line_id=line_id)
+        if enabled:
+            # Enable upstream termination.
+            self.send_request_add_entry_to_action(
+                "bng_ingress.upstream.t_pppoe_term_v4",
+                [self.Exact("line_id", line_id_),
+                 self.Exact("ipv4_src", ipv4_addr_),
+                 self.Exact("pppoe_session_id", pppoe_session_id_)],
+                "bng_ingress.upstream.term_enabled_v4", [])
+
+        # Downstream
+        if enabled:
+            a_name = "set_line_next"
+            a_params = [
+                ("line_id", line_id_),
+                ("next_id", ds_next_id_),
+            ]
+        else:
+            a_name = "set_line_drop"
+            a_params = [
+                ("line_id", line_id_)
+            ]
         self.send_request_add_entry_to_action(
-            "bng_ingress.upstream.t_pppoe_term_v4",
-            [self.Exact("line_id", line_id_),
-             self.Exact("ipv4_src", ipv4_src_),
-             self.Exact("pppoe_session_id", pppoe_session_id_)],
-            "bng_ingress.upstream.term_enabled_v4", [])
+            "bng_ingress.downstream.t_line_map_v4",
+            [self.Exact("ipv4_dst", ipv4_addr_)],
+            "bng_ingress.downstream." + a_name, a_params)
+
+        self.send_request_add_entry_to_action(
+            "bng_egress.downstream.t_session_encap",
+            [self.Exact("line_id", line_id_)],
+            "bng_egress.downstream.encap_v4", [
+                ("c_tag", c_tag_),
+                ("pppoe_session_id", pppoe_session_id_),
+            ])
 
     def set_upstream_pppoe_cp_table(self, pppoe_codes=()):
         for code in pppoe_codes:
@@ -1092,37 +1095,43 @@ class PppoeTest(IPv4UnicastTest):
                 [self.Exact("pppoe_code", code_)],
                 "bng_ingress.upstream.punt_to_cpu", [], DEFAULT_PRIORITY)
 
-    def bng_setup(self, pppoe_cp_codes=PPPOED_CODES):
+    def setup_bng(self, pppoe_cp_codes=PPPOED_CODES):
         self.set_upstream_pppoe_cp_table(pppoe_codes=pppoe_cp_codes)
 
-    def read_pkt_count_upstream(self, type, line_id):
-        counter = self.read_counter("bng_ingress.upstream.c_" + type, line_id)
+    def read_pkt_count(self, c_name, line_id):
+        counter = self.read_counter(c_name, line_id)
         return counter.data.packet_count
 
-    def runUpstreamPopAndRouteV4Test(self, pkt, tagged2, mpls, line_terminated=True):
+    def read_pkt_count_upstream(self, type, line_id):
+        return self.read_pkt_count("bng_ingress.upstream.c_" + type, line_id)
+
+    def read_pkt_count_downstream_rx(self, line_id):
+        return self.read_pkt_count("bng_ingress.downstream.c_line_rx", line_id)
+
+    def read_pkt_count_downstream_tx(self, line_id):
+        return self.read_pkt_count("bng_egress.downstream.c_line_tx", line_id)
+
+    def runUpstreamV4Test(self, pkt, tagged2, mpls, line_enabled=True):
         s_tag = vlan_id_outer = 888
         c_tag = vlan_id_inner = 777
         line_id = 99
         pppoe_session_id = 0xbeac
-        next_hop_mac = HOST1_MAC
+        core_router_mac = HOST1_MAC
 
-        self.bng_setup()
-
-        self.set_line_map(s_tag=s_tag, c_tag=c_tag, line_id=line_id)
-
-        if line_terminated:
-            self.set_ipv4_termination(line_id=line_id,
-                                      ipv4_src=pkt[IP].src,
-                                      pppoe_session_id=pppoe_session_id)
+        self.setup_bng()
+        self.setup_line_v4(
+            s_tag=s_tag, c_tag=c_tag, line_id=line_id, ipv4_addr=pkt[IP].src,
+            pppoe_session_id=pppoe_session_id, ds_next_id=line_id,
+            enabled=line_enabled)
 
         # Input is the given packet with double VLAN tags and PPPoE headers.
-        pppoe_pkt = pkt_add_pppoe(pkt, type=1, code=1,
+        pppoe_pkt = pkt_add_pppoe(pkt, type=1, code=PPPOE_CODE_SESSION_STAGE,
                                   session_id=pppoe_session_id)
         pppoe_pkt = pkt_add_vlan(pppoe_pkt, vlan_vid=vlan_id_inner)
         pppoe_pkt = pkt_add_vlan(pppoe_pkt, vlan_vid=vlan_id_outer)
 
         # Build expected packet from the input one, we expect it to be routed as
-        # if it was without VLAN and PPPoE headers.
+        # if it was without VLAN tags and PPPoE headers.
         exp_pkt_base = pkt.copy()
 
         # Read counters, will verify their values later.
@@ -1131,19 +1140,19 @@ class PppoeTest(IPv4UnicastTest):
         old_control = self.read_pkt_count_upstream("control", line_id)
 
         self.runIPv4UnicastTest(
-            pkt=pppoe_pkt, dst_mac=next_hop_mac, exp_pkt_base=exp_pkt_base,
-            routed_eth_types=[ETH_TYPE_VLAN], tagged2=tagged2, mpls=mpls,
-            verify_pkt=line_terminated)
+            pkt=pppoe_pkt, next_hop_mac=core_router_mac,
+            exp_pkt_base=exp_pkt_base, routed_eth_types=[ETH_TYPE_VLAN],
+            tagged2=tagged2, mpls=mpls, verify_pkt=line_enabled)
 
-        # Verify that packet counters were updated as expected.
+        # Verify that upstream counters were updated as expected.
         new_terminated = self.read_pkt_count_upstream("terminated", line_id)
         new_dropped = self.read_pkt_count_upstream("dropped", line_id)
         new_control = self.read_pkt_count_upstream("control", line_id)
 
-        # no control plane packets here.
+        # No control plane packets here.
         self.assertEqual(new_control, old_control)
 
-        if line_terminated:
+        if line_enabled:
             self.assertEqual(new_terminated, old_terminated + 1)
             self.assertEqual(new_dropped, old_dropped)
         else:
@@ -1154,20 +1163,18 @@ class PppoeTest(IPv4UnicastTest):
         s_tag = vlan_id_outer = 888
         c_tag = vlan_id_inner = 777
 
-        self.bng_setup()
-
+        self.setup_bng()
         # If a line mapping is not provided, we expect packets to be processed
         # with line ID 0 (e.g. counters updated at index 0).
         line_id = 0
         if line_mapped:
             line_id = 99
-            self.set_line_map(s_tag=s_tag, c_tag=c_tag, line_id=line_id)
+            self.set_upstream_line_map(
+                s_tag=s_tag, c_tag=c_tag, line_id=line_id)
 
-        # Input is the given packet with double VLAN tags and PPPoE headers.
         pppoed_pkt = pkt_add_vlan(pppoed_pkt, vlan_vid=vlan_id_inner)
         pppoed_pkt = pkt_add_vlan(pppoed_pkt, vlan_vid=vlan_id_outer)
 
-        # Read counters, will verify their values later.
         old_terminated = self.read_pkt_count_upstream("terminated", line_id)
         old_dropped = self.read_pkt_count_upstream("dropped", line_id)
         old_control = self.read_pkt_count_upstream("control", line_id)
@@ -1176,7 +1183,6 @@ class PppoeTest(IPv4UnicastTest):
         self.verify_packet_in(pppoed_pkt, self.port1)
         testutils.verify_no_other_packets(self)
 
-        # Verify that packet counters were updated as expected.
         new_terminated = self.read_pkt_count_upstream("terminated", line_id)
         new_dropped = self.read_pkt_count_upstream("dropped", line_id)
         new_control = self.read_pkt_count_upstream("control", line_id)
@@ -1190,11 +1196,49 @@ class PppoeTest(IPv4UnicastTest):
         vlan_id_outer = 888
         vlan_id_inner = 777
 
-        self.bng_setup()
+        self.setup_bng()
 
-        # Input is the given packet with double VLAN tags and PPPoE headers.
+        # Assuming pkts are double-tagged at the control plane.
         pppoed_pkt = pkt_add_vlan(pppoed_pkt, vlan_vid=vlan_id_inner)
         pppoed_pkt = pkt_add_vlan(pppoed_pkt, vlan_vid=vlan_id_outer)
 
         self.verify_packet_out(pppoed_pkt, self.port1)
         testutils.verify_no_other_packets(self)
+
+    def runDownstreamV4Test(self, pkt, in_tagged, line_enabled):
+        s_tag = vlan_id_outer = 888
+        c_tag = vlan_id_inner = 777
+        line_id = 99
+        next_id = 99
+        pppoe_session_id = 0xbeac
+        olt_mac = HOST1_MAC
+
+        self.setup_bng()
+        self.setup_line_v4(
+            s_tag=s_tag, c_tag=c_tag, line_id=line_id, ipv4_addr=pkt[IP].dst,
+            pppoe_session_id=pppoe_session_id, ds_next_id=next_id,
+            enabled=line_enabled)
+
+        # Build expected packet from the input one, we expect it to be routed
+        # and encapsulated in double VLAN tags and PPPoE.
+        exp_pkt_base = pkt_add_pppoe(pkt, type=1, code=PPPOE_CODE_SESSION_STAGE,
+                                     session_id=pppoe_session_id)
+        exp_pkt_base = pkt_add_vlan(exp_pkt_base, vlan_vid=vlan_id_inner)
+        exp_pkt_base = pkt_add_vlan(exp_pkt_base, vlan_vid=vlan_id_outer)
+
+        old_rx_count = self.read_pkt_count_downstream_rx(line_id)
+        old_tx_count = self.read_pkt_count_downstream_tx(line_id)
+
+        self.runIPv4UnicastTest(
+            pkt=pkt, next_hop_mac=olt_mac, exp_pkt_base=exp_pkt_base,
+            tagged1=in_tagged, tagged2=True, next_id=next_id, next_vlan=s_tag,
+            verify_pkt=line_enabled)
+
+        nex_rx_count = self.read_pkt_count_downstream_rx(line_id)
+        nex_tx_count = self.read_pkt_count_downstream_tx(line_id)
+
+        self.assertEqual(nex_rx_count, old_rx_count + 1)
+        if line_enabled:
+            self.assertEqual(nex_tx_count, old_tx_count + 1)
+        else:
+            self.assertEqual(nex_tx_count, old_tx_count)
