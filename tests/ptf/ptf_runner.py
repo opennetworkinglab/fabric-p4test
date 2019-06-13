@@ -30,7 +30,6 @@ from collections import OrderedDict
 
 import google.protobuf.text_format
 import grpc
-from p4.tmp import p4config_pb2
 from p4.v1 import p4runtime_pb2, p4runtime_pb2_grpc
 
 from bmv2 import Bmv2Switch
@@ -66,26 +65,22 @@ def build_bmv2_config(bmv2_json_path):
     """
     Builds the device config for BMv2
     """
-    device_config = p4config_pb2.P4DeviceConfig()
-    device_config.reassign = True
     with open(bmv2_json_path) as f:
-        device_config.device_data = f.read()
+        device_config = f.read()
     return device_config
 
-
 def build_tofino_config(prog_name, bin_path, cxt_json_path):
-    device_config = p4config_pb2.P4DeviceConfig()
     with open(bin_path, 'rb') as bin_f:
         with open(cxt_json_path, 'r') as cxt_json_f:
-            device_config.device_data = ""
-            device_config.device_data += struct.pack("<i", len(prog_name))
-            device_config.device_data += prog_name
+            device_config = ""
+            device_config += struct.pack("<i", len(prog_name))
+            device_config += prog_name
             tofino_bin = bin_f.read()
-            device_config.device_data += struct.pack("<i", len(tofino_bin))
-            device_config.device_data += tofino_bin
+            device_config += struct.pack("<i", len(tofino_bin))
+            device_config += tofino_bin
             cxt_json = cxt_json_f.read()
-            device_config.device_data += struct.pack("<i", len(cxt_json))
-            device_config.device_data += cxt_json
+            device_config += struct.pack("<i", len(cxt_json))
+            device_config += cxt_json
     return device_config
 
 
@@ -162,7 +157,7 @@ def update_config(p4info_path, bmv2_json_path, tofino_bin_path,
         else:
             device_config = build_tofino_config("name", tofino_bin_path,
                                                 tofino_cxt_json_path)
-        config.p4_device_config = device_config.SerializeToString()
+        config.p4_device_config = device_config
         request.action = p4runtime_pb2.SetForwardingPipelineConfigRequest.VERIFY_AND_COMMIT
         try:
             stub.SetForwardingPipelineConfig(request)
