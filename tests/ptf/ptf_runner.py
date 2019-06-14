@@ -69,6 +69,7 @@ def build_bmv2_config(bmv2_json_path):
         device_config = f.read()
     return device_config
 
+
 def build_tofino_config(prog_name, bin_path, cxt_json_path):
     with open(bin_path, 'rb') as bin_f:
         with open(cxt_json_path, 'r') as cxt_json_f:
