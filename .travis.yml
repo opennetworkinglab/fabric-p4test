@@ -42,4 +42,4 @@ stages:
   - test
   - checkstyle
   - name: push
-    if: branch = master
+    if: type != pull_request AND branch = master
