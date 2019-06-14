@@ -121,9 +121,9 @@ class P4RuntimeErrorIterator:
         if error is None:
             raise P4RuntimeErrorFormatException("No binary details field")
 
-        if len(error.details) == 0:
-            raise P4RuntimeErrorFormatException(
-                "Binary details field has empty Any details repeated field")
+        # if len(error.details) == 0:
+        #     raise P4RuntimeErrorFormatException(
+        #         "Binary details field has empty Any details repeated field")
         self.errors = error.details
         self.idx = 0
 
@@ -152,10 +152,11 @@ class P4RuntimeErrorIterator:
 # class, we extract the nested error message (one for each operation included in
 # the batch) in order to print error code + user-facing message.  See P4 Runtime
 # documentation for more details on error-reporting.
-class P4RuntimeWriteException(Exception):
+class P4RuntimeException(Exception):
     def __init__(self, grpc_error):
         assert (grpc_error.code() == grpc.StatusCode.UNKNOWN)
-        super(P4RuntimeWriteException, self).__init__()
+        super(P4RuntimeException, self).__init__()
+        self.grpc_error = grpc_error
         self.errors = []
         try:
             error_iterator = P4RuntimeErrorIterator(grpc_error)
@@ -165,7 +166,8 @@ class P4RuntimeWriteException(Exception):
             raise  # just propagate exception for now
 
     def __str__(self):
-        message = "Error(s) during Write:\n"
+        message = "Error(s) during RPC: {} {}\n".format(
+            self.grpc_error.code(), self.grpc_error.details())
         for idx, p4_error in self.errors:
             code_name = code_pb2._CODE.values_by_number[
                 p4_error.canonical_code].name
@@ -304,6 +306,17 @@ class P4RuntimeTest(BaseTest):
         rx_pkt = Ether(pkt_in_msg.payload)
         if not match_exp_pkt(exp_pkt, rx_pkt):
             self.fail("Received packet-in is not the expected one\n" + format_pkt_match(rx_pkt, exp_pkt))
+
+    def verify_packet_out(self, pkt, out_port):
+        port_hex = stringify(out_port, 2)
+        packet_out = p4runtime_pb2.PacketOut()
+        packet_out.payload = str(pkt)
+        egress_physical_port = packet_out.metadata.add()
+        egress_physical_port.metadata_id = 1
+        egress_physical_port.value = port_hex
+
+        self.send_packet_out(packet_out)
+        testutils.verify_packet(self, pkt, out_port)
 
     def get_stream_packet(self, type_, timeout=1):
         start = time.time()
@@ -471,7 +484,18 @@ class P4RuntimeTest(BaseTest):
         except grpc.RpcError as e:
             if e.code() != grpc.StatusCode.UNKNOWN:
                 raise e
-            raise P4RuntimeWriteException(e)
+            raise P4RuntimeException(e)
+
+    def read_request(self, req):
+        entities = []
+        try:
+            for resp in self.stub.Read(req):
+                entities.extend(resp.entities)
+        except grpc.RpcError as e:
+            if e.code() != grpc.StatusCode.UNKNOWN:
+                raise e
+            raise P4RuntimeException(e)
+        return entities
 
     def write_request(self, req, store=True):
         rep = self._write(req)
@@ -485,6 +509,11 @@ class P4RuntimeTest(BaseTest):
         election_id = req.election_id
         election_id.high = 0
         election_id.low = self.election_id
+        return req
+
+    def get_new_read_request(self):
+        req = p4runtime_pb2.ReadRequest()
+        req.device_id = self.device_id
         return req
 
     #
@@ -609,6 +638,20 @@ class P4RuntimeTest(BaseTest):
         req = self.get_new_write_request()
         self.push_update_add_entry_to_group(req, t_name, mk, grp_id)
         return req, self.write_request(req, store=(mk is not None))
+
+    def read_counter(self, c_name, c_index):
+        req = self.get_new_read_request()
+        entity = req.entities.add()
+        counter_entry = entity.counter_entry
+        c_id = self.get_counter_id(c_name)
+        counter_entry.counter_id = c_id
+        index = counter_entry.index
+        index.index = c_index
+
+        for entity in self.read_request(req):
+            if entity.HasField("counter_entry"):
+                return entity.counter_entry
+        return None
 
     # iterates over all requests in reverse order; if they are INSERT updates,
     # replay them as DELETE updates; this is a convenient way to clean-up a lot

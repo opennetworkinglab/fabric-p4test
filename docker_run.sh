@@ -9,23 +9,19 @@ if [[ -z "${ONOS_ROOT}" ]]; then
     exit 1
 fi
 
-# Create image if it does not exist.
-imageName=fabric-p4test
-docker inspect ${imageName}:local > /dev/null || docker build . -t ${imageName}:local
-
-runName=${imageName}-${RANDOM}
+imageName=onosproject/fabric-p4test:latest
+runName=fabric-p4test-${RANDOM}
 
 function ctrl_c() {
         echo " Stopping ${runName}..."
-        docker stop ${runName}
+        docker stop -t0 ${runName}
 }
 trap ctrl_c INT
 
 # Run and show log (also stored in run.log)
 docker run --name ${runName} -d --privileged --rm \
-    -v $DIR:/fabric-p4test \
-    -v $ONOS_ROOT:/onos \
-    fabric-p4test:local \
+    -v ${DIR}:/fabric-p4test \
+    -v ${ONOS_ROOT}:/onos \
+    ${imageName} \
     bash /fabric-p4test/travis/run_test.sh /onos ${@}
 docker logs -f ${runName} | tee ${DIR}/run.log
-

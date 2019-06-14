@@ -17,6 +17,7 @@
 from itertools import combinations
 
 from ptf.testutils import group
+from scapy.layers.ppp import PPPoED
 
 from base_test import autocleanup
 from fabric_test import *
@@ -119,7 +120,7 @@ class FabricIPv4UnicastGtpTest(IPv4UnicastTest):
               make_gtp(20 + len(inner_udp), 0xeeffc0f0) / \
               IP(src=HOST1_IPV4, dst=HOST2_IPV4) / \
               inner_udp
-        self.runIPv4UnicastTest(pkt, HOST2_MAC)
+        self.runIPv4UnicastTest(pkt, next_hop_mac=HOST2_MAC)
 
 
 class FabricIPv4UnicastGroupTest(FabricTest):
@@ -434,7 +435,7 @@ class FabricIPv4MplsGroupTest(IPv4UnicastTest):
     def doRunTest(self, pkt, mac_dest, tagged1):
         self.runIPv4UnicastTest(
             pkt, mac_dest, prefix_len=24, tagged1=tagged1, tagged2=False,
-            bidirectional=False, mpls=True)
+            mpls=True)
 
     def runTest(self):
         print ""
@@ -765,3 +766,102 @@ class FabricIntTransitFullTest(IntTest):
                         self.doRunTest(
                             pkt=int_pkt, tagged1=tagged[0], tagged2=tagged[1],
                             ignore_csum=1)
+
+
+@group("bng")
+class FabricPppoeUpstreamTest(PppoeTest):
+
+    @autocleanup
+    def doRunTest(self, pkt, tagged2, mpls, line_enabled):
+        self.runUpstreamV4Test(pkt, tagged2, mpls, line_enabled)
+
+    def runTest(self):
+        print ""
+        for line_enabled in [True, False]:
+            for out_tagged in [False, True]:
+                for mpls in [False, True]:
+                    if mpls and out_tagged:
+                        continue
+                    for pkt_type in ["tcp", "udp", "icmp"]:
+                        print "Testing %s packet, line_enabled=%s, " \
+                              "out_tagged=%s, mpls=%s ..." \
+                              % (pkt_type, line_enabled, out_tagged, mpls)
+                        pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
+                            pktlen=120)
+                        self.doRunTest(pkt, out_tagged, mpls, line_enabled)
+
+
+@group("bng")
+class FabricPppoeControlPacketInTest(PppoeTest):
+
+    @autocleanup
+    def doRunTest(self, pkt, line_mapped):
+        self.runControlPacketInTest(pkt, line_mapped)
+
+    def runTest(self):
+        # FIXME: using a dummy payload will generate malformed PPP packets,
+        #  instead we should use appropriate PPP protocol values and PPPoED
+        #  payload (tags)
+        # https://www.cloudshark.org/captures/f79aea31ad53
+        pkts = {
+            "PADI": Ether(src=HOST1_MAC, dst=BROADCAST_MAC) / \
+                    PPPoED(version=1, type=1, code=PPPOED_CODE_PADI) / \
+                    "dummy pppoed payload",
+            "PADR": Ether(src=HOST1_MAC, dst=SWITCH_MAC) / \
+                    PPPoED(version=1, type=1, code=PPPOED_CODE_PADR) / \
+                    "dummy pppoed payload",
+        }
+
+        print ""
+        for line_mapped in [True, False]:
+            for pkt_type, pkt in pkts.items():
+                print "Testing %s packet, line_mapped=%s..." \
+                      % (pkt_type, line_mapped)
+                self.doRunTest(pkt, line_mapped)
+
+
+@group("bng")
+class FabricPppoeControlPacketOutTest(PppoeTest):
+
+    @autocleanup
+    def doRunTest(self, pkt):
+        self.runControlPacketOutTest(pkt)
+
+    def runTest(self):
+        # FIXME: using a dummy payload will generate malformed PPP packets,
+        #  instead we should use appropriate PPP protocol values and PPPoED
+        #  payload (tags)
+        # https://www.cloudshark.org/captures/f79aea31ad53
+        pkts = {
+            "PADO": Ether(src=SWITCH_MAC, dst=HOST1_MAC) / \
+                    PPPoED(version=1, type=1, code=PPPOED_CODE_PADO) / \
+                    "dummy pppoed payload",
+            "PADS": Ether(src=SWITCH_MAC, dst=HOST1_MAC) / \
+                    PPPoED(version=1, type=1, code=PPPOED_CODE_PADS) / \
+                    "dummy pppoed payload"
+        }
+
+        print ""
+        for pkt_type, pkt in pkts.items():
+            print "Testing %s packet..." % pkt_type
+            self.doRunTest(pkt)
+
+
+@group("bng")
+class FabricPppoeDownstreamTest(PppoeTest):
+
+    @autocleanup
+    def doRunTest(self, pkt, in_tagged, line_enabled):
+        self.runDownstreamV4Test(pkt, in_tagged, line_enabled)
+
+    def runTest(self):
+        print ""
+        for line_enabled in [True, False]:
+            for in_tagged in [False, True]:
+                for pkt_type in ["tcp", "udp", "icmp"]:
+                    print "Testing %s packet, line_enabled=%s, " \
+                          "in_tagged=%s..." \
+                          % (pkt_type, line_enabled, in_tagged)
+                    pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
+                        pktlen=120)
+                    self.doRunTest(pkt, in_tagged, line_enabled)

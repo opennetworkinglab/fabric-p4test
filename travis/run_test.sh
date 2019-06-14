@@ -6,19 +6,8 @@ TRAVIS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 FP4TEST_DIR=${TRAVIS_DIR}/../
 PTF_DIR=${FP4TEST_DIR}/tests/ptf
 
-if [[ -z "${1}" ]]; then
-    echo "ERROR: first arg should be either an ONOS branch/commit ID or a directory (starting with /)"
-    exit 1
-else
-    if [[ ${1} == /* ]]; then
-        export ONOS_ROOT=${1}
-    else
-        echo "*** Testing against ONOS commit/branch: ${1}"
-        git clone https://github.com/opennetworkinglab/onos /tmp/onos -b ${1}
-        export ONOS_ROOT=/tmp/onos
-    fi
-fi
-
+# First argument is the location of the onos source tree
+ONOS_ROOT=${1}
 # Pass all other arguments to make
 TEST_CASE=${@:2}
 
@@ -37,7 +26,7 @@ err_report() {
     cat ${PTF_DIR}/ptf.log
 
     echo "************************************************"
-    echo "SOME TESTS FAILED :("
+    echo "SOME PTF TESTS FAILED :("
     echo "************************************************"
     exit 1
 }
@@ -46,12 +35,12 @@ trap 'err_report' ERR
 cd ${PTF_DIR}
 
 echo "************************************************"
-echo "STARTING TESTS..."
+echo "STARTING PTF TESTS..."
 echo "************************************************"
 
-make ${TEST_CASE} 2>&1
+ONOS_ROOT=${ONOS_ROOT} make ${TEST_CASE} 2>&1
 
 echo "************************************************"
-echo "ALL TESTS PASSED :)"
+echo "ALL PTF TESTS PASSED :)"
 echo "************************************************"
 
