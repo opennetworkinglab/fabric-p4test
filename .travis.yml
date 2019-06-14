@@ -18,7 +18,6 @@ env:
       PROFILES: "'fabric fabric-spgw fabric-int fabric-spgw-int'"
 
 before_install:
-  - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
   - docker pull $DOCKER_REPO
 
 install:
@@ -37,7 +36,7 @@ jobs:
       script: find . -name \*.py -exec pycodestyle --max-line-length=120 --ignore=E126,E127,E722,E502,E131 {} +
     - stage: push
       name: "Docker push"
-      script: docker push $DOCKER_REPO
+      script: echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin && docker push $DOCKER_REPO
 
 stages:
   - test
