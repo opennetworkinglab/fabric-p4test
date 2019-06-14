@@ -18,9 +18,7 @@ env:
       PROFILES: "'fabric fabric-spgw fabric-int fabric-spgw-int'"
 
 install:
-  - docker pull $DOCKER_REPO
-  - docker build --cache-from $DOCKER_REPO -t fp4test .
-  - docker tag fp4test $DOCKER_REPO
+  - docker build -t fp4test .
 
 script:
   - git clone --depth 1 https://github.com/opennetworkinglab/onos /tmp/onos -b $ONOS_BRANCH
@@ -38,6 +36,7 @@ jobs:
       name: "Docker push"
       script:
         - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+        - docker tag fp4test $DOCKER_REPO
         - docker push $DOCKER_REPO
 
 stages:
