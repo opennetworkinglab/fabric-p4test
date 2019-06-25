@@ -531,7 +531,7 @@ class FabricDefaultVlanPacketInTest(FabricTest):
     @autocleanup
     def runTest(self):
         pkt = testutils.simple_eth_packet(pktlen=MIN_PKT_LEN)
-        self.add_forwarding_acl_cpu_entry(eth_type=pkt[Ether].type)
+        self.add_forwarding_acl_punt_to_cpu(eth_type=pkt[Ether].type)
         for port in [self.port1, self.port2]:
             testutils.send_packet(self, port, str(pkt))
             self.verify_packet_in(pkt, port)
