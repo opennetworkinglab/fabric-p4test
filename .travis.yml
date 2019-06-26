@@ -9,23 +9,20 @@ python:
   - "2.7"
 
 env:
-  matrix:
-    - ONOS_BRANCH: master
-      PROFILES: "'all'"
-    - ONOS_BRANCH: onos-2.1
-      PROFILES: "'fabric fabric-spgw fabric-int fabric-spgw-int'"
-    - ONOS_BRANCH: onos-1.15
-      PROFILES: "'fabric fabric-spgw fabric-int fabric-spgw-int'"
+  global:
+    - ONOS_BRANCH=master
+    - PROFILES=all
 
 install:
   - docker build -t fp4test .
 
-script:
-  - git clone --depth 1 https://github.com/opennetworkinglab/onos /tmp/onos -b $ONOS_BRANCH
-  - docker run --privileged --rm -v $PWD:/fp4test -v /tmp/onos:/onos fp4test bash /fp4test/travis/run_test.sh /onos $PROFILES
-
 jobs:
   include:
+    - stage: ptf
+      name: "PTF tests"
+      script:
+        - git clone --depth 1 https://github.com/opennetworkinglab/onos /tmp/onos -b $ONOS_BRANCH
+        - docker run --privileged --rm -v $PWD:/fp4test -v /tmp/onos:/onos fp4test bash /fp4test/travis/run_test.sh /onos $PROFILES
     - stage: checkstyle
       name: "Checkstyle"
       install: skip
@@ -40,7 +37,7 @@ jobs:
         - docker push $DOCKER_REPO
 
 stages:
-  - test
+  - ptf
   - checkstyle
   - name: push
     if: type != pull_request AND branch = master
