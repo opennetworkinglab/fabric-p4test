@@ -33,6 +33,8 @@ FORWARDING_TYPE_BRIDGING = 0
 FORWARDING_TYPE_UNICAST_IPV4 = 2
 FORWARDING_TYPE_MPLS = 1
 
+CPU_CLONE_SESSION_ID = 511
+
 DEFAULT_MPLS_TTL = 64
 MIN_PKT_LEN = 80
 
@@ -303,14 +305,23 @@ class FabricTest(P4RuntimeTest):
             [self.Exact("mpls_label", label_)],
             "forwarding.pop_mpls_and_next", [("next_id", next_id_)])
 
-    def add_forwarding_acl_cpu_entry(self, eth_type=None, clone=False):
+    def add_forwarding_acl_punt_to_cpu(self, eth_type=None):
         eth_type_ = stringify(eth_type, 2)
         eth_type_mask = stringify(0xFFFF, 2)
-        action_name = "clone_to_cpu" if clone else "punt_to_cpu"
         self.send_request_add_entry_to_action(
             "acl.acl",
             [self.Ternary("eth_type", eth_type_, eth_type_mask)],
-            "acl." + action_name, [],
+            "acl.punt_to_cpu", [],
+            DEFAULT_PRIORITY)
+
+    def add_forwarding_acl_set_clone_session_id(self, eth_type=None, clone_group_id=None):
+        eth_type_ = stringify(eth_type, 2)
+        eth_type_mask = stringify(0xFFFF, 2)
+        clone_group_id_ = stringify(clone_group_id, 4)
+        self.send_request_add_entry_to_action(
+            "acl.acl",
+            [self.Ternary("eth_type", eth_type_, eth_type_mask)],
+            "acl.set_clone_session_id", [("clone_id", clone_group_id_)],
             DEFAULT_PRIORITY)
 
     def add_xconnect(self, next_id, port1, port2):
@@ -474,6 +485,21 @@ class FabricTest(P4RuntimeTest):
             replica.instance = 0
         return req, self.write_request(req)
 
+    def add_clone_group(self, clone_id, ports):
+        req = self.get_new_write_request()
+        update = req.updates.add()
+        update.type = p4runtime_pb2.Update.INSERT
+        pre_entry = update.entity.packet_replication_engine_entry
+        clone_entry = pre_entry.clone_session_entry
+        clone_entry.session_id = clone_id
+        clone_entry.class_of_service = 0
+        clone_entry.packet_length_bytes = 0
+        for port in ports:
+            replica = clone_entry.replicas.add()
+            replica.egress_port = port
+            replica.instance = 1
+        return req, self.write_request(req)
+
 
 class BridgingTest(FabricTest):
 
@@ -545,11 +571,12 @@ class ArpBroadcastTest(FabricTest):
         for port in untagged_ports:
             self.set_ingress_port_vlan(port, False, 0, vlan_id)
         self.add_bridging_entry(vlan_id, zero_mac_addr, zero_mac_addr, next_id)
-        self.add_forwarding_acl_cpu_entry(eth_type=ETH_TYPE_ARP, clone=True)
+        self.add_forwarding_acl_set_clone_session_id(eth_type=ETH_TYPE_ARP, clone_group_id=CPU_CLONE_SESSION_ID)
         self.add_next_multicast(next_id, mcast_group_id)
-        # FIXME: use clone session APIs when supported on PI
-        # For now we add the CPU port to the mc group.
-        self.add_mcast_group(mcast_group_id, all_ports + [self.cpu_port])
+        # Add the multicast group
+        self.add_mcast_group(mcast_group_id, all_ports)
+        # Add the clone group
+        self.add_clone_group(CPU_CLONE_SESSION_ID, [self.cpu_port])
         for port in untagged_ports:
             self.set_egress_vlan_pop(port, vlan_id)
 
@@ -720,7 +747,7 @@ class PacketOutTest(FabricTest):
 
 class PacketInTest(FabricTest):
     def runPacketInTest(self, pkt, eth_type, tagged=False, vlan_id=10):
-        self.add_forwarding_acl_cpu_entry(eth_type=eth_type)
+        self.add_forwarding_acl_punt_to_cpu(eth_type=eth_type)
         for port in [self.port1, self.port2]:
             if tagged:
                 self.set_ingress_port_vlan(port, True, vlan_id, vlan_id)
