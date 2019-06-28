@@ -1173,7 +1173,7 @@ class PppoeTest(IPv4UnicastTest):
             tagged2=tagged2, mpls=mpls, verify_pkt=line_enabled)
 
         # Verify that upstream counters were updated as expected.
-        if self.is_bmv2():
+        if not self.is_bmv2():
             time.sleep(1)
         new_terminated = self.read_pkt_count_upstream("terminated", line_id)
         new_dropped = self.read_pkt_count_upstream("dropped", line_id)
@@ -1213,7 +1213,7 @@ class PppoeTest(IPv4UnicastTest):
         self.verify_packet_in(pppoed_pkt, self.port1)
         testutils.verify_no_other_packets(self)
 
-        if self.is_bmv2():
+        if not self.is_bmv2():
             time.sleep(1)
         new_terminated = self.read_pkt_count_upstream("terminated", line_id)
         new_dropped = self.read_pkt_count_upstream("dropped", line_id)
@@ -1267,7 +1267,7 @@ class PppoeTest(IPv4UnicastTest):
             tagged1=in_tagged, tagged2=True, next_id=next_id, next_vlan=s_tag,
             verify_pkt=line_enabled)
 
-        if self.is_bmv2():
+        if not self.is_bmv2():
             time.sleep(1)
         nex_rx_count = self.read_pkt_count_downstream_rx(line_id)
         nex_tx_count = self.read_pkt_count_downstream_tx(line_id)
