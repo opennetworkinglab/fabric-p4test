@@ -14,6 +14,7 @@
 # limitations under the License.
 #
 import struct
+import time
 from operator import ior
 
 from p4.v1 import p4runtime_pb2
@@ -1172,6 +1173,8 @@ class PppoeTest(IPv4UnicastTest):
             tagged2=tagged2, mpls=mpls, verify_pkt=line_enabled)
 
         # Verify that upstream counters were updated as expected.
+        if self.is_bmv2():
+            time.sleep(1)
         new_terminated = self.read_pkt_count_upstream("terminated", line_id)
         new_dropped = self.read_pkt_count_upstream("dropped", line_id)
         new_control = self.read_pkt_count_upstream("control", line_id)
@@ -1210,6 +1213,8 @@ class PppoeTest(IPv4UnicastTest):
         self.verify_packet_in(pppoed_pkt, self.port1)
         testutils.verify_no_other_packets(self)
 
+        if self.is_bmv2():
+            time.sleep(1)
         new_terminated = self.read_pkt_count_upstream("terminated", line_id)
         new_dropped = self.read_pkt_count_upstream("dropped", line_id)
         new_control = self.read_pkt_count_upstream("control", line_id)
@@ -1253,6 +1258,7 @@ class PppoeTest(IPv4UnicastTest):
         exp_pkt_base = pkt_add_vlan(exp_pkt_base, vlan_vid=vlan_id_inner)
         exp_pkt_base = pkt_add_vlan(exp_pkt_base, vlan_vid=vlan_id_outer)
 
+
         old_rx_count = self.read_pkt_count_downstream_rx(line_id)
         old_tx_count = self.read_pkt_count_downstream_tx(line_id)
 
@@ -1261,6 +1267,8 @@ class PppoeTest(IPv4UnicastTest):
             tagged1=in_tagged, tagged2=True, next_id=next_id, next_vlan=s_tag,
             verify_pkt=line_enabled)
 
+        if self.is_bmv2():
+            time.sleep(1)
         nex_rx_count = self.read_pkt_count_downstream_rx(line_id)
         nex_tx_count = self.read_pkt_count_downstream_tx(line_id)
 
