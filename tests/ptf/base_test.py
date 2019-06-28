@@ -639,7 +639,8 @@ class P4RuntimeTest(BaseTest):
         self.push_update_add_entry_to_group(req, t_name, mk, grp_id)
         return req, self.write_request(req, store=(mk is not None))
 
-    def read_counter(self, c_name, c_index):
+    def read_counter(self, c_name, c_index, wait_time=1):
+        time.sleep(wait_time)
         req = self.get_new_read_request()
         entity = req.entities.add()
         counter_entry = entity.counter_entry
