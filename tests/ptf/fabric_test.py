@@ -1258,7 +1258,6 @@ class PppoeTest(IPv4UnicastTest):
         exp_pkt_base = pkt_add_vlan(exp_pkt_base, vlan_vid=vlan_id_inner)
         exp_pkt_base = pkt_add_vlan(exp_pkt_base, vlan_vid=vlan_id_outer)
 
-
         old_rx_count = self.read_pkt_count_downstream_rx(line_id)
         old_tx_count = self.read_pkt_count_downstream_tx(line_id)
 
