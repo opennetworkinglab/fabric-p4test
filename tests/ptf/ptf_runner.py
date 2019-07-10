@@ -173,7 +173,7 @@ def update_config(p4info_path, bmv2_json_path, tofino_bin_path,
 
 
 def run_test(p4info_path, grpc_addr, device_id, cpu_port, ptfdir, port_map_path,
-             platform=None, extra_args=()):
+             device, platform=None, extra_args=()):
     """
     Runs PTF tests included in provided directory.
     Device must be running and configfured with appropriate P4 program.
@@ -210,6 +210,7 @@ def run_test(p4info_path, grpc_addr, device_id, cpu_port, ptfdir, port_map_path,
     test_params += ';grpcaddr=\'{}\''.format(grpc_addr)
     test_params += ';device_id=\'{}\''.format(device_id)
     test_params += ';cpu_port=\'{}\''.format(cpu_port)
+    test_params += ';device=\'{}\''.format(device)
     if platform is not None:
         test_params += ';pltfm=\'{}\''.format(platform)
     cmd.append('--test-params={}'.format(test_params))
@@ -363,6 +364,7 @@ def main():
                                ptfdir=args.ptf_dir,
                                port_map_path=args.port_map,
                                platform=args.platform,
+                               device=device,
                                extra_args=unknown_args)
 
         if bmv2_sw is not None:

@@ -204,6 +204,10 @@ class P4RuntimeTest(BaseTest):
         if self.cpu_port is None:
             self.fail("CPU port is not set")
 
+        self.device = testutils.test_param_get("device")
+        if self.device is None:
+            self.fail("Device is not set")
+
         pltfm = testutils.test_param_get("pltfm")
         if pltfm is not None and pltfm == 'hw' and getattr(self, "_skip_on_hw", False):
             raise SkipTest("Skipping test in HW")
@@ -225,6 +229,9 @@ class P4RuntimeTest(BaseTest):
 
         self.election_id = 1
         self.set_up_stream()
+
+    def is_bmv2(self):
+        return self.device is "bmv2"
 
     # In order to make writing tests easier, we accept any suffix that uniquely
     # identifies the object among p4info objects of the same type.
