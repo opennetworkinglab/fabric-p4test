@@ -19,7 +19,7 @@ endif
 
 fabric-bng: set-cmd
 ifndef TEST
-	$(eval TEST = all ^spgw ^int)
+	$(eval TEST = all ^spgw ^int ^xconnect)
 endif
 	$(call run_tests,fabric-bng,$(TEST))
 

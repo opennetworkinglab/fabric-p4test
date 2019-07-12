@@ -45,6 +45,7 @@ class FabricBridgingTest(BridgingTest):
                 self.doRunTest(tagged[0], tagged[1], pkt)
 
 
+@group("xconnect")
 class FabricDoubleVlanXConnectTest(DoubleVlanXConnectTest):
     @autocleanup
     def doRunTest(self, pkt):
