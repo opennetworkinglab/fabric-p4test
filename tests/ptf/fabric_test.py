@@ -430,7 +430,7 @@ class FabricTest(P4RuntimeTest):
             "next.next_vlan",
             [self.Exact("next_id", next_id_)],
             "next.set_double_vlan",
-            [("vlan_id", vlan_id_),
+            [("outer_vlan_id", vlan_id_),
              ("inner_vlan_id", inner_vlan_id_)])
 
     def add_next_hashed_indirect_action(self, next_id, action_name, params):
@@ -578,10 +578,7 @@ class DoubleVlanXConnectTest(FabricTest):
         vlan_id_outer = 100
         vlan_id_inner = 200
         next_id = 99
-        # self.set_ingress_port_vlan(ingress_port=self.port1, vlan_id=vlan_id_outer,
-        #                            vlan_valid=True, inner_vlan_valid=None)
-        # self.set_ingress_port_vlan(ingress_port=self.port2, vlan_id=vlan_id_outer,
-        #                            vlan_valid=True, inner_vlan_valid=None)
+
         self.setup_port(self.port1, vlan_id_outer, tagged=True)
         self.setup_port(self.port2, vlan_id_outer, tagged=True)
         # miss on filtering.fwd_classifier => bridging
@@ -740,7 +737,7 @@ class IPv4UnicastTest(FabricTest):
         testutils.verify_no_other_packets(self)
 
 
-class PopAndRouteTest(FabricTest):
+class DoubleVlanTerminationTest(FabricTest):
 
     def runRouteAndPushTest(self, pkt, next_hop_mac,
                             prefix_len=24,
@@ -791,8 +788,8 @@ class PopAndRouteTest(FabricTest):
         if exp_pkt is None:
             # Build exp pkt using the input one.
             exp_pkt = pkt.copy()
+            exp_pkt = pkt_add_vlan(exp_pkt, next_inner_vlan_id)
             exp_pkt = pkt_add_vlan(exp_pkt, next_vlan_id)
-            exp_pkt = pkt_add_inner_vlan(exp_pkt, next_inner_vlan_id)
             exp_pkt = pkt_route(exp_pkt, next_hop_mac)
             if in_tagged:
                 exp_pkt = pkt_remove_vlan(exp_pkt, in_vlan)
@@ -1247,7 +1244,7 @@ class IntTest(IPv4UnicastTest):
                                 prefix_len=32, exp_pkt=exp_pkt)
 
 
-class PppoeTest(PopAndRouteTest):
+class PppoeTest(DoubleVlanTerminationTest):
 
     def set_line_map(self, s_tag, c_tag, line_id):
         assert line_id != 0
@@ -1288,12 +1285,12 @@ class PppoeTest(PopAndRouteTest):
 
         # Downstream
         if enabled:
-            a_name = "set_line_session"
+            a_name = "set_session"
             a_params = [
                 ("pppoe_session_id", pppoe_session_id_),
             ]
         else:
-            a_name = "set_line_drop"
+            a_name = "drop"
             a_params = []
         self.send_request_add_entry_to_action(
             "bng_ingress.downstream.t_line_session_map",
