@@ -240,8 +240,11 @@ class FabricTest(P4RuntimeTest):
                 action, [])
         self.write_request(req)
 
-    def setup_port(self, port_id, vlan_id, tagged=False):
-        if tagged:
+    def setup_port(self, port_id, vlan_id, tagged=False, double_tagged=False, inner_vlan_id=0):
+        if double_tagged:
+            self.set_ingress_port_vlan(ingress_port=port_id, vlan_id=vlan_id,
+                                       vlan_valid=True, inner_vlan_valid=True, inner_vlan_id=inner_vlan_id)
+        elif tagged:
             self.set_ingress_port_vlan(ingress_port=port_id, vlan_id=vlan_id,
                                        vlan_valid=True)
         else:
@@ -266,7 +269,6 @@ class FabricTest(P4RuntimeTest):
         inner_vlan_id_ = stringify(inner_vlan_id, 2)
         inner_vlan_id_mask_ = stringify(4095 if inner_vlan_valid else 0, 2)
         action_name = "permit" if vlan_valid else "permit_with_internal_vlan"
-        action_name = "permit_with_pop" if inner_vlan_valid else action_name
         action_params = [] if vlan_valid else [("vlan_id", new_vlan_id_)]
         self.send_request_add_entry_to_action(
             "filtering.ingress_port_vlan",
@@ -749,6 +751,22 @@ class DoubleVlanTerminationTest(FabricTest):
                             dst_ipv4=None,
                             routed_eth_types=(ETH_TYPE_IPV4,),
                             verify_pkt=True):
+        """
+        Route and Push test case. The switch output port is expected to send double tagged packets.
+        The switch routes the packet to the correct destination and adds the double VLAN tag to it.
+        :param pkt:
+        :param next_hop_mac:
+        :param prefix_len:
+        :param exp_pkt:
+        :param next_id:
+        :param next_vlan_id:
+        :param next_inner_vlan_id:
+        :param in_tagged:
+        :param dst_ipv4:
+        :param routed_eth_types:
+        :param verify_pkt:
+        :return:
+        """
 
         if IP not in pkt or Ether not in pkt:
             self.fail("Cannot do IPv4 test with packet that is not IP")
@@ -767,11 +785,10 @@ class DoubleVlanTerminationTest(FabricTest):
             dst_ipv4 = pkt[IP].dst
         switch_mac = pkt[Ether].dst
 
-        # Setup port 1: port receives double tagged packets
-        self.set_ingress_port_vlan(self.port1,
-                                   vlan_valid=in_tagged,
-                                   vlan_id=in_vlan,
-                                   internal_vlan_id=in_vlan)
+        # Setup port 1
+        self.setup_port(self.port1, vlan_id=in_vlan, tagged=in_tagged)
+        # Setup port 2: packets on this port are double tagged packets
+        self.setup_port(self.port2, vlan_id=next_vlan_id, double_tagged=True, inner_vlan_id=next_inner_vlan_id)
 
         # Forwarding type -> routing v4
         for eth_type in routed_eth_types:
@@ -810,22 +827,20 @@ class DoubleVlanTerminationTest(FabricTest):
                            vlan_id=None,
                            inner_vlan_id=None,
                            out_tagged=False,
-                           next_vlan=None,
                            dst_ipv4=None,
                            routed_eth_types=(ETH_TYPE_IPV4,),
                            verify_pkt=True):
         """
-        Pop and Route test case. The switch port expect to receive double tagged packets, remote both VLAN headers
-        and route it to the correct destination.
-        :param pkt: Packet you want to send as test, it should contain the correct VLANs or without VLANs
+        Pop and Route test case. The switch port expect to receive double tagged packets.
+        The switch removes both VLAN headers from the packet and routes it to the correct destination.
+        :param pkt:
         :param next_hop_mac:
         :param prefix_len:
         :param exp_pkt:
         :param next_id:
         :param vlan_id:
         :param inner_vlan_id:
-        :param tagged2: if the output port should expect VLAN tagged packets
-        :param next_vlan: value to use as next VLAN
+        :param out_tagged:
         :param dst_ipv4:
         :param routed_eth_types:
         :param verify_pkt:
@@ -833,7 +848,7 @@ class DoubleVlanTerminationTest(FabricTest):
         """
 
         if IP not in pkt or Ether not in pkt:
-            self.fail("Cannot do IPv4 test with packet that is not IP")
+            self.fail("Cannot do IPv4 test wqith packet that is not IP")
 
         pkt_to_send = pkt.copy()
         if Dot1Q not in pkt:
@@ -850,17 +865,17 @@ class DoubleVlanTerminationTest(FabricTest):
                     pkt_to_send = pkt_add_vlan(pkt_to_send, vlan_vid=vlan_id)
                 else:
                     self.fail("Packet should be without VLANs or with correct VLANs")
-        next_vlan = VLAN_ID_2 if next_vlan is None else next_vlan
+        next_vlan = VLAN_ID_2 if out_tagged else vlan_id
         next_id = 100 if next_id is None else next_id
 
         if dst_ipv4 is None:
             dst_ipv4 = pkt[IP].dst
         switch_mac = pkt[Ether].dst
 
-        # Setup port 1: port receives double tagged packets
-        self.set_ingress_port_vlan(self.port1,
-                                   vlan_valid=True, vlan_id=vlan_id,
-                                   inner_vlan_valid=True, inner_vlan_id=inner_vlan_id)
+        # Setup port 1: packets on this port are double tagged packets
+        self.setup_port(self.port1, vlan_id=vlan_id, double_tagged=True, inner_vlan_id=inner_vlan_id)
+        # Setup port 2
+        self.setup_port(self.port2, vlan_id=next_vlan, tagged=out_tagged)
 
         # Forwarding type -> routing v4
         for eth_type in routed_eth_types:
@@ -881,7 +896,7 @@ class DoubleVlanTerminationTest(FabricTest):
             exp_pkt = pkt_remove_vlan(exp_pkt)
             exp_pkt = pkt_remove_vlan(exp_pkt)
             if out_tagged:
-                exp_pkt = pkt_add_vlan(exp_pkt, vlan_id=next_vlan)
+                exp_pkt = pkt_add_vlan(exp_pkt, vlan_vid=next_vlan)
 
         testutils.send_packet(self, self.port1, str(pkt_to_send))
         exp_pkt = pkt_decrement_ttl(exp_pkt)
@@ -1353,7 +1368,7 @@ class PppoeTest(DoubleVlanTerminationTest):
 
         self.runPopAndRouteTest(
             pkt=pppoe_pkt, next_hop_mac=core_router_mac,
-            exp_pkt=exp_pkt, routed_eth_types=(ETH_TYPE_PPPOE,), out_tagged=tagged2, next_vlan=VLAN_ID_2,
+            exp_pkt=exp_pkt, routed_eth_types=(ETH_TYPE_PPPOE,), out_tagged=tagged2,
             vlan_id=s_tag, inner_vlan_id=c_tag, verify_pkt=line_enabled)
 
         # Verify that upstream counters were updated as expected.
