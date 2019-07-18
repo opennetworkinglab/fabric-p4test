@@ -1,13 +1,12 @@
 # PTF tests for ONOS fabric.p4
 
-This project contains PTF-based tests for [fabric.p4][fabric.p4 code], a P4
-program used by ONOS to provide connectivity in a leaf-spine fabric topology of
-P4Runtime-enabled switches:
-
-<https://wiki.onosproject.org/x/wgBkAQ>
+This project contains PTF-based tests for [fabric.p4][fabric.p4 code], a P4 
+program distributed as part of ONOS, designed to work with
+[Trellis](https://www.opennetworking.org/trellis/), a set of SDN
+applications running on top of ONOS that provide the control plane for
+an IP fabric based on MPLS segment-routing.
 
 PTF is a framework for data plane testing:
-
 <https://github.com/p4lang/PTF>
 
 ## Run tests using BMv2 and Docker
@@ -73,7 +72,7 @@ available inside the `tests/ptf` directory.
 
 ## Status
 
-All test cases are executed daily on different ONOS branches using Travis CI.
+All test cases are executed daily against the ONOS master branch using Travis CI.
 The current status is:
 
 [![Build Status](https://travis-ci.org/opennetworkinglab/fabric-p4test.svg?branch=master)](https://travis-ci.org/opennetworkinglab/fabric-p4test)
