@@ -194,6 +194,16 @@ def pkt_decrement_ttl(pkt):
     return pkt
 
 
+def map_eth_type_to_conditions(eth_type):
+    if eth_type == ETH_TYPE_IPV4 or eth_type == 0x800:
+        return {"ipv4": True, "ipv6": False, "mpls": False}
+    # if eth_type == ETH_TYPE_IPV6:
+    #     return {"ipv4": False, "ipv6": True, "mpls": False}
+    if eth_type == ETH_TYPE_MPLS_UNICAST:
+        return {"ipv4": False, "ipv6": False, "mpls": True}
+    return {"ipv4": False, "ipv6": False, "mpls": False}
+
+
 class FabricTest(P4RuntimeTest):
 
     def __init__(self):
@@ -294,13 +304,15 @@ class FabricTest(P4RuntimeTest):
         ingress_port_ = stringify(ingress_port, 2)
         eth_dstAddr_ = mac_to_binary(eth_dstAddr)
         eth_mask_ = mac_to_binary(MAC_MASK)
-        ethertype_ = stringify(ethertype, 2)
+        header_conditions = map_eth_type_to_conditions(ethertype)
+        header_conditions_ = [self.Exact("is_"+h, '\x01' if v else '\x00') for h, v in header_conditions.items()]
         fwd_type_ = stringify(fwd_type, 1)
+
         self.send_request_add_entry_to_action(
             "filtering.fwd_classifier",
             [self.Exact("ig_port", ingress_port_),
              self.Ternary("eth_dst", eth_dstAddr_, eth_mask_),
-             self.Exact("eth_type", ethertype_)],
+             ] + header_conditions_,
             "filtering.set_forwarding_type", [("fwd_type", fwd_type_)],
             priority=DEFAULT_PRIORITY)
 
@@ -1368,7 +1380,7 @@ class PppoeTest(DoubleVlanTerminationTest):
 
         self.runPopAndRouteTest(
             pkt=pppoe_pkt, next_hop_mac=core_router_mac,
-            exp_pkt=exp_pkt, routed_eth_types=(ETH_TYPE_PPPOE,), out_tagged=tagged2,
+            exp_pkt=exp_pkt, out_tagged=tagged2,
             vlan_id=s_tag, inner_vlan_id=c_tag, verify_pkt=line_enabled)
 
         # Verify that upstream counters were updated as expected.
