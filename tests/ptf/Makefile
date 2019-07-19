@@ -13,7 +13,7 @@ all: fabric fabric-bng fabric-spgw fabric-int fabric-spgw-int
 
 fabric: set-cmd
 ifndef TEST
-	$(eval TEST = all ^spgw ^int ^bng)
+	$(eval TEST = all ^spgw ^int ^bng ^dth)
 endif
 	$(call run_tests,fabric,$(TEST))
 
@@ -25,19 +25,19 @@ endif
 
 fabric-spgw: set-cmd
 ifndef TEST
-	$(eval TEST = all ^int ^bng)
+	$(eval TEST = all ^int ^bng ^dth)
 endif
 	$(call run_tests,fabric-spgw,$(TEST))
 
 fabric-spgw-int: set-cmd
 ifndef TEST
-	$(eval TEST = all ^int-full ^bng)
+	$(eval TEST = all ^int-full ^bng ^dth)
 endif
 	$(call run_tests,fabric-spgw-int,$(TEST))
 
 fabric-int: set-cmd
 ifndef TEST
-	$(eval TEST = all ^spgw ^int-full ^bng)
+	$(eval TEST = all ^spgw ^int-full ^bng ^dth)
 endif
 	$(call run_tests,fabric-int,$(TEST))
 

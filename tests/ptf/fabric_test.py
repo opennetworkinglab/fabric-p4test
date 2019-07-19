@@ -77,6 +77,7 @@ UE_IPV4 = "16.255.255.252"
 
 VLAN_ID_1 = 100
 VLAN_ID_2 = 200
+VLAN_ID_3 = 300
 DEFAULT_VLAN = 4094
 
 MPLS_LABEL_1 = 100
@@ -196,12 +197,12 @@ def pkt_decrement_ttl(pkt):
 
 def map_eth_type_to_conditions(eth_type):
     if eth_type == ETH_TYPE_IPV4 or eth_type == 0x800:
-        return {"ipv4": True, "ipv6": False, "mpls": False}
+        return {"is_ipv4": True, "is_ipv6": False, "is_mpls": False}
     # if eth_type == ETH_TYPE_IPV6:
     #     return {"ipv4": False, "ipv6": True, "mpls": False}
     if eth_type == ETH_TYPE_MPLS_UNICAST:
-        return {"ipv4": False, "ipv6": False, "mpls": True}
-    return {"ipv4": False, "ipv6": False, "mpls": False}
+        return {"is_ipv4": False, "is_ipv6": False, "is_mpls": True}
+    return {"is_ipv4": False, "is_ipv6": False, "is_mpls": False}
 
 
 class FabricTest(P4RuntimeTest):
@@ -305,7 +306,7 @@ class FabricTest(P4RuntimeTest):
         eth_dstAddr_ = mac_to_binary(eth_dstAddr)
         eth_mask_ = mac_to_binary(MAC_MASK)
         header_conditions = map_eth_type_to_conditions(ethertype)
-        header_conditions_ = [self.Exact("is_"+h, '\x01' if v else '\x00') for h, v in header_conditions.items()]
+        header_conditions_ = [self.Exact(h, '\x01' if v else '\x00') for h, v in header_conditions.items()]
         fwd_type_ = stringify(fwd_type, 1)
 
         self.send_request_add_entry_to_action(
@@ -789,7 +790,7 @@ class DoubleVlanTerminationTest(FabricTest):
             in_tagged = True
             pkt_is_tagged = True
         else:
-            in_vlan = VLAN_ID_1
+            in_vlan = VLAN_ID_3
 
         next_id = 100 if next_id is None else next_id
 
@@ -817,17 +818,17 @@ class DoubleVlanTerminationTest(FabricTest):
         if exp_pkt is None:
             # Build exp pkt using the input one.
             exp_pkt = pkt.copy()
+            if in_tagged and pkt_is_tagged:
+                exp_pkt = pkt_remove_vlan(exp_pkt, in_vlan)
             exp_pkt = pkt_add_vlan(exp_pkt, next_inner_vlan_id)
             exp_pkt = pkt_add_vlan(exp_pkt, next_vlan_id)
             exp_pkt = pkt_route(exp_pkt, next_hop_mac)
-            if in_tagged:
-                exp_pkt = pkt_remove_vlan(exp_pkt, in_vlan)
+            exp_pkt = pkt_decrement_ttl(exp_pkt)
 
         if in_tagged and not pkt_is_tagged:
             pkt = pkt_add_vlan(pkt, vlan_vid=in_vlan)
 
         testutils.send_packet(self, self.port1, str(pkt))
-        exp_pkt = pkt_decrement_ttl(exp_pkt)
         if verify_pkt:
             testutils.verify_packet(self, exp_pkt, self.port2)
         testutils.verify_no_other_packets(self)
@@ -860,24 +861,23 @@ class DoubleVlanTerminationTest(FabricTest):
         """
 
         if IP not in pkt or Ether not in pkt:
-            self.fail("Cannot do IPv4 test wqith packet that is not IP")
+            self.fail("Cannot do IPv4 test with packet that is not IP")
 
-        pkt_to_send = pkt.copy()
         if Dot1Q not in pkt:
-            pkt_to_send = pkt_add_vlan(pkt_to_send, vlan_vid=vlan_id)
-            pkt_to_send = pkt_add_vlan(pkt_to_send, vlan_vid=inner_vlan_id)
+            pkt = pkt_add_vlan(pkt, vlan_vid=inner_vlan_id)
+            pkt = pkt_add_vlan(pkt, vlan_vid=vlan_id)
         else:
             try:
-                pkt_to_send[Dot1Q:2]
+                pkt[Dot1Q:2]
             except IndexError:
                 # Add the not added vlan header
-                if pkt_to_send[Dot1Q:1].vlan == vlan_id:
-                    pkt_to_send = pkt_add_inner_vlan(pkt_to_send, vlan_vid=inner_vlan_id)
-                elif pkt_to_send[Dot1Q:1].vlan == inner_vlan_id:
-                    pkt_to_send = pkt_add_vlan(pkt_to_send, vlan_vid=vlan_id)
+                if pkt[Dot1Q:1].vlan == vlan_id:
+                    pkt = pkt_add_inner_vlan(pkt, vlan_vid=inner_vlan_id)
+                elif pkt[Dot1Q:1].vlan == inner_vlan_id:
+                    pkt = pkt_add_vlan(pkt, vlan_vid=vlan_id)
                 else:
                     self.fail("Packet should be without VLANs or with correct VLANs")
-        next_vlan = VLAN_ID_2 if out_tagged else vlan_id
+        next_vlan = VLAN_ID_3 if out_tagged else vlan_id
         next_id = 100 if next_id is None else next_id
 
         if dst_ipv4 is None:
@@ -907,11 +907,11 @@ class DoubleVlanTerminationTest(FabricTest):
             exp_pkt = pkt_route(exp_pkt, next_hop_mac)
             exp_pkt = pkt_remove_vlan(exp_pkt)
             exp_pkt = pkt_remove_vlan(exp_pkt)
+            exp_pkt = pkt_decrement_ttl(exp_pkt)
             if out_tagged:
                 exp_pkt = pkt_add_vlan(exp_pkt, vlan_vid=next_vlan)
 
-        testutils.send_packet(self, self.port1, str(pkt_to_send))
-        exp_pkt = pkt_decrement_ttl(exp_pkt)
+        testutils.send_packet(self, self.port1, str(pkt))
         if verify_pkt:
             testutils.verify_packet(self, exp_pkt, self.port2)
         testutils.verify_no_other_packets(self)
@@ -1370,8 +1370,9 @@ class PppoeTest(DoubleVlanTerminationTest):
         # if it was without VLAN tags and PPPoE headers.
         exp_pkt = pkt.copy()
         exp_pkt = pkt_route(exp_pkt, core_router_mac)
+        exp_pkt = pkt_decrement_ttl(exp_pkt)
         if tagged2:
-            exp_pkt = pkt_add_vlan(exp_pkt, VLAN_ID_2)
+            exp_pkt = pkt_add_vlan(exp_pkt, VLAN_ID_3)
 
         # Read counters, will verify their values later.
         old_terminated = self.read_pkt_count_upstream("terminated", line_id)
@@ -1467,6 +1468,7 @@ class PppoeTest(DoubleVlanTerminationTest):
         exp_pkt = pkt_add_vlan(exp_pkt, vlan_vid=vlan_id_inner)
         exp_pkt = pkt_add_vlan(exp_pkt, vlan_vid=vlan_id_outer)
         exp_pkt = pkt_route(exp_pkt, olt_mac)
+        exp_pkt = pkt_decrement_ttl(exp_pkt)
 
         old_rx_count = self.read_pkt_count_downstream_rx(line_id)
         old_tx_count = self.read_pkt_count_downstream_tx(line_id)
