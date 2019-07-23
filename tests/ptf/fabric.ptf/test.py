@@ -45,6 +45,7 @@ class FabricBridgingTest(BridgingTest):
                 self.doRunTest(tagged[0], tagged[1], pkt)
 
 
+@group("xconnect")
 class FabricDoubleVlanXConnectTest(DoubleVlanXConnectTest):
     @autocleanup
     def doRunTest(self, pkt):
@@ -865,3 +866,46 @@ class FabricPppoeDownstreamTest(PppoeTest):
                     pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
                         pktlen=120)
                     self.doRunTest(pkt, in_tagged, line_enabled)
+
+
+@group("dth")
+class FabricDoubleTaggedHostUpstream(DoubleVlanTerminationTest):
+
+    @autocleanup
+    def doRunTest(self, pkt, out_tagged, mpls):
+        self.runPopAndRouteTest(pkt, next_hop_mac=HOST2_MAC,
+                                vlan_id=VLAN_ID_1, inner_vlan_id=VLAN_ID_2,
+                                out_tagged=out_tagged, mpls=mpls)
+
+    def runTest(self):
+        print ""
+        for out_tagged in [True, False]:
+            for mpls in [True, False]:
+                if mpls and out_tagged:
+                    continue
+                for pkt_type in ["tcp", "udp", "icmp"]:
+                    print "Testing %s packet, out_tagged=%s..." \
+                          % (pkt_type, out_tagged)
+                    pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
+                        pktlen=120)
+                    self.doRunTest(pkt, out_tagged, mpls)
+
+
+@group("dth")
+class FabricDoubleTaggedHostDownstream(DoubleVlanTerminationTest):
+
+    @autocleanup
+    def doRunTest(self, pkt, in_tagged):
+        self.runRouteAndPushTest(pkt, next_hop_mac=HOST2_MAC,
+                                 next_vlan_id=VLAN_ID_1, next_inner_vlan_id=VLAN_ID_2,
+                                in_tagged=in_tagged)
+
+    def runTest(self):
+        print ""
+        for in_tagged in [True, False]:
+            for pkt_type in ["tcp", "udp", "icmp"]:
+                print "Testing %s packet, in_tagged=%s..." \
+                      % (pkt_type, in_tagged)
+                pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
+                    pktlen=120)
+                self.doRunTest(pkt, in_tagged)
