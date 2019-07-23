@@ -898,7 +898,7 @@ class FabricDoubleTaggedHostDownstream(DoubleVlanTerminationTest):
     def doRunTest(self, pkt, in_tagged):
         self.runRouteAndPushTest(pkt, next_hop_mac=HOST2_MAC,
                                  next_vlan_id=VLAN_ID_1, next_inner_vlan_id=VLAN_ID_2,
-                                in_tagged=in_tagged)
+                                 in_tagged=in_tagged)
 
     def runTest(self):
         print ""
