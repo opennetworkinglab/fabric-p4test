@@ -44,6 +44,7 @@ UDP_GTP_PORT = 2152
 ETH_TYPE_ARP = 0x0806
 ETH_TYPE_IPV4 = 0x0800
 ETH_TYPE_VLAN = 0x8100
+ETH_TYPE_QINQ = 0x88a8
 ETH_TYPE_PPPOE = 0x8864
 ETH_TYPE_MPLS_UNICAST = 0x8847
 
@@ -161,7 +162,7 @@ def pkt_add_vlan(pkt, vlan_vid=10, vlan_pcp=0, dl_vlan_cfi=0):
 
 def pkt_add_inner_vlan(pkt, vlan_vid=10, vlan_pcp=0, dl_vlan_cfi=0):
     assert Dot1Q in pkt
-    return Ether(src=pkt[Ether].src, dst=pkt[Ether].dst) / \
+    return Ether(src=pkt[Ether].src, dst=pkt[Ether].dst, type=ETH_TYPE_QINQ) / \
            Dot1Q(prio=pkt[Dot1Q].prio, id=pkt[Dot1Q].id, vlan=pkt[Dot1Q].vlan) / \
            Dot1Q(prio=vlan_pcp, id=dl_vlan_cfi, vlan=vlan_vid) / \
            pkt[Dot1Q].payload
@@ -820,8 +821,8 @@ class DoubleVlanTerminationTest(FabricTest):
             exp_pkt = pkt.copy()
             if in_tagged and pkt_is_tagged:
                 exp_pkt = pkt_remove_vlan(exp_pkt, in_vlan)
-            exp_pkt = pkt_add_vlan(exp_pkt, next_inner_vlan_id)
             exp_pkt = pkt_add_vlan(exp_pkt, next_vlan_id)
+            exp_pkt = pkt_add_inner_vlan(exp_pkt, next_inner_vlan_id)
             exp_pkt = pkt_route(exp_pkt, next_hop_mac)
             exp_pkt = pkt_decrement_ttl(exp_pkt)
 
@@ -868,8 +869,8 @@ class DoubleVlanTerminationTest(FabricTest):
             self.fail("Cannot do MPLS test with egress port tagged (out_tagged)")
 
         if Dot1Q not in pkt:
-            pkt = pkt_add_vlan(pkt, vlan_vid=inner_vlan_id)
             pkt = pkt_add_vlan(pkt, vlan_vid=vlan_id)
+            pkt = pkt_add_inner_vlan(pkt, vlan_vid=inner_vlan_id)
         else:
             try:
                 pkt[Dot1Q:2]
@@ -1436,8 +1437,8 @@ class PppoeTest(DoubleVlanTerminationTest):
             self.set_line_map(
                 s_tag=s_tag, c_tag=c_tag, line_id=line_id)
 
-        pppoed_pkt = pkt_add_vlan(pppoed_pkt, vlan_vid=vlan_id_inner)
         pppoed_pkt = pkt_add_vlan(pppoed_pkt, vlan_vid=vlan_id_outer)
+        pppoed_pkt = pkt_add_inner_vlan(pppoed_pkt, vlan_vid=vlan_id_inner)
 
         old_terminated = self.read_pkt_count_upstream("terminated", line_id)
         old_dropped = self.read_pkt_count_upstream("dropped", line_id)
@@ -1487,8 +1488,8 @@ class PppoeTest(DoubleVlanTerminationTest):
         # Build expected packet from the input one, we expect it to be routed
         # and encapsulated in double VLAN tags and PPPoE.
         exp_pkt = pkt_add_pppoe(pkt, type=1, code=PPPOE_CODE_SESSION_STAGE, session_id=pppoe_session_id)
-        exp_pkt = pkt_add_vlan(exp_pkt, vlan_vid=vlan_id_inner)
         exp_pkt = pkt_add_vlan(exp_pkt, vlan_vid=vlan_id_outer)
+        exp_pkt = pkt_add_inner_vlan(exp_pkt, vlan_vid=vlan_id_inner)
         exp_pkt = pkt_route(exp_pkt, olt_mac)
         exp_pkt = pkt_decrement_ttl(exp_pkt)
 
