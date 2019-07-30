@@ -99,7 +99,7 @@ class Bmv2Switch:
             '--persistent_config_dir=/dev/null',
             '--initial_pipeline=' + stratumRoot + INITIAL_PIPELINE,
             '--cpu_port=%s' % self.cpu_port,
-            '--external-hercules-urls=0.0.0.0:%s' % self.grpc_port,
+            '--external-stratum-urls=0.0.0.0:%s' % self.grpc_port,
         ]
         for port, intf in port_map.items():
             args.append('%d@%s' % (port, intf))
