@@ -127,14 +127,6 @@ PPPOED_CODES = (
     PPPOED_CODE_PADT,
 )
 
-MAP_ETHTYPE_CONDITIONS = {
-    ETH_TYPE_IPV4: {"is_ipv4": True, "is_ipv6": False, "is_mpls": False},
-    ETH_TYPE_MPLS_UNICAST: {"is_ipv4": False, "is_ipv6": False, "is_mpls": True},
-    # ETH_TYPE_IPV6: {"is_ipv4": False, "is_ipv6": True, "is_mpls": False},
-    None: {"is_ipv4": False, "is_ipv6": False, "is_mpls": False},
-}
-
-
 def make_gtp(msg_len, teid, flags=0x30, msg_type=0xff):
     """Convenience function since GTP header has no scapy support"""
     return struct.pack(">BBHL", flags, msg_type, msg_len, teid)
@@ -162,7 +154,7 @@ def pkt_add_vlan(pkt, vlan_vid=10, vlan_pcp=0, dl_vlan_cfi=0):
 
 def pkt_add_inner_vlan(pkt, vlan_vid=10, vlan_pcp=0, dl_vlan_cfi=0):
     assert Dot1Q in pkt
-    return Ether(src=pkt[Ether].src, dst=pkt[Ether].dst, type=ETH_TYPE_QINQ) / \
+    return Ether(src=pkt[Ether].src, dst=pkt[Ether].dst, type=ETH_TYPE_VLAN) / \
            Dot1Q(prio=pkt[Dot1Q].prio, id=pkt[Dot1Q].id, vlan=pkt[Dot1Q].vlan) / \
            Dot1Q(prio=vlan_pcp, id=dl_vlan_cfi, vlan=vlan_vid) / \
            pkt[Dot1Q].payload
@@ -201,14 +193,6 @@ def pkt_decrement_ttl(pkt):
     if IP in pkt:
         pkt[IP].ttl -= 1
     return pkt
-
-
-def map_eth_type_to_conditions(eth_type):
-    try:
-        return MAP_ETHTYPE_CONDITIONS[eth_type]
-    except KeyError:
-        return MAP_ETHTYPE_CONDITIONS[None]
-
 
 class FabricTest(P4RuntimeTest):
 
@@ -306,16 +290,16 @@ class FabricTest(P4RuntimeTest):
         ingress_port_ = stringify(ingress_port, 2)
         eth_dstAddr_ = mac_to_binary(eth_dstAddr)
         eth_mask_ = mac_to_binary(MAC_MASK)
-        header_conditions = map_eth_type_to_conditions(ethertype)
-        header_conditions_ = [self.Exact(h, '\x01' if v else '\x00') for h, v in header_conditions.items()]
+        ethertype_ = stringify(ethertype, 2)
         fwd_type_ = stringify(fwd_type, 1)
-
+        matches = [self.Exact("ig_port", ingress_port_),
+                   self.Ternary("eth_dst", eth_dstAddr_, eth_mask_),
+                   self.Exact("eth_type", ethertype_)]
         self.send_request_add_entry_to_action(
             "filtering.fwd_classifier",
-            [self.Exact("ig_port", ingress_port_),
-             self.Ternary("eth_dst", eth_dstAddr_, eth_mask_),
-             ] + header_conditions_,
-            "filtering.set_forwarding_type", [("fwd_type", fwd_type_)],
+            matches,
+            "filtering.set_forwarding_type",
+            [("fwd_type", fwd_type_)],
             priority=DEFAULT_PRIORITY)
 
     def add_bridging_entry(self, vlan_id, eth_dstAddr, eth_dstAddr_mask, next_id):
