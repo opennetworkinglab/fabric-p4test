@@ -85,5 +85,5 @@ mailing list:
 <https://groups.google.com/a/onosproject.org/forum/#!forum/brigade-p4>
 
 
-[fabric.p4 code]: https://github.com/opennetworkinglab/onos/tree/master/pipelines/fabric/src/main/resources
+[fabric.p4 code]: https://github.com/opennetworkinglab/onos/tree/master/pipelines/fabric/impl/src/main/resources
 [fabric profiles]: tests/ptf/README.md#fabric-profiles
