@@ -194,6 +194,7 @@ def pkt_decrement_ttl(pkt):
         pkt[IP].ttl -= 1
     return pkt
 
+
 class FabricTest(P4RuntimeTest):
 
     def __init__(self):
@@ -290,11 +291,23 @@ class FabricTest(P4RuntimeTest):
         ingress_port_ = stringify(ingress_port, 2)
         eth_dstAddr_ = mac_to_binary(eth_dstAddr)
         eth_mask_ = mac_to_binary(MAC_MASK)
-        ethertype_ = stringify(ethertype, 2)
+        if ethertype == ETH_TYPE_IPV4:
+            ethertype_ = stringify(0, 2)
+            ethertype_mask_ = stringify(0, 2)
+            ip_eth_type = stringify(ethertype, 2)
+        elif ethertype == ETH_TYPE_MPLS_UNICAST:
+            ethertype_ = stringify(ETH_TYPE_MPLS_UNICAST, 2)
+            ethertype_mask_ = stringify(0xFFFF, 2)
+            # FIXME: this will work only for MPLS+IPv4 traffic
+            ip_eth_type = stringify(ETH_TYPE_IPV4, 2)
+        else:
+            # TODO: what should we match on? I should never reach this point.
+            return
         fwd_type_ = stringify(fwd_type, 1)
         matches = [self.Exact("ig_port", ingress_port_),
                    self.Ternary("eth_dst", eth_dstAddr_, eth_mask_),
-                   self.Exact("eth_type", ethertype_)]
+                   self.Ternary("eth_type", ethertype_, ethertype_mask_),
+                   self.Exact("ip_eth_type", ip_eth_type)]
         self.send_request_add_entry_to_action(
             "filtering.fwd_classifier",
             matches,
