@@ -265,16 +265,20 @@ class FabricTest(P4RuntimeTest):
         vlan_id_ = stringify(vlan_id, 2)
         vlan_id_mask_ = stringify(4095 if vlan_valid else 0, 2)
         new_vlan_id_ = stringify(internal_vlan_id, 2)
-        inner_vlan_id_ = stringify(inner_vlan_id if inner_vlan_id is not None else 0, 2)
-        inner_vlan_id_mask_ = stringify(4095 if inner_vlan_id is not None else 0, 2)
         action_name = "permit" if vlan_valid else "permit_with_internal_vlan"
         action_params = [] if vlan_valid else [("vlan_id", new_vlan_id_)]
+        matches = [self.Exact("ig_port", ingress_port_),
+                   self.Exact("vlan_is_valid", vlan_valid_),
+                   self.Ternary("vlan_id", vlan_id_, vlan_id_mask_)]
+        if inner_vlan_id is not None:
+            # Match on inner_vlan, only when explicitly requested
+            inner_vlan_id_ = stringify(inner_vlan_id, 2)
+            inner_vlan_id_mask_ = stringify(4095, 2)
+            matches.append(self.Ternary("inner_vlan_id", inner_vlan_id_, inner_vlan_id_mask_))
+
         self.send_request_add_entry_to_action(
             "filtering.ingress_port_vlan",
-            [self.Exact("ig_port", ingress_port_),
-             self.Exact("vlan_is_valid", vlan_valid_),
-             self.Ternary("vlan_id", vlan_id_, vlan_id_mask_),
-             self.Ternary("inner_vlan_id", inner_vlan_id_, inner_vlan_id_mask_)],
+            matches,
             "filtering." + action_name, action_params,
             DEFAULT_PRIORITY)
 
