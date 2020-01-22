@@ -1357,17 +1357,24 @@ class PppoeTest(DoubleVlanTerminationTest):
         self.set_upstream_pppoe_cp_table(pppoe_codes=pppoe_cp_codes)
 
     def read_pkt_count(self, c_name, line_id):
-        counter = self.read_counter(c_name, line_id)
+        counter = self.read_counter(c_name, line_id, typ="PACKETS")
         return counter.data.packet_count
+
+    def read_byte_count(self, c_name, line_id):
+        counter = self.read_counter(c_name, line_id, typ="BYTES")
+        return counter.data.byte_count
 
     def read_pkt_count_upstream(self, type, line_id):
         return self.read_pkt_count("bng_ingress.upstream.c_" + type, line_id)
 
-    def read_pkt_count_downstream_rx(self, line_id):
-        return self.read_pkt_count("bng_ingress.downstream.c_line_rx", line_id)
+    def read_byte_count_upstream(self, type, line_id):
+        return self.read_byte_count("bng_ingress.upstream.c_" + type, line_id)
 
-    def read_pkt_count_downstream_tx(self, line_id):
-        return self.read_pkt_count("bng_egress.downstream.c_line_tx", line_id)
+    def read_byte_count_downstream_rx(self, line_id):
+        return self.read_byte_count("bng_ingress.downstream.c_line_rx", line_id)
+
+    def read_byte_count_downstream_tx(self, line_id):
+        return self.read_byte_count("bng_egress.downstream.c_line_tx", line_id)
 
     def runUpstreamV4Test(self, pkt, tagged2, mpls, line_enabled=True):
         s_tag = vlan_id_outer = 888
@@ -1399,8 +1406,9 @@ class PppoeTest(DoubleVlanTerminationTest):
             exp_pkt = pkt_decrement_ttl(exp_pkt)
 
         # Read counters, will verify their values later.
-        old_terminated = self.read_pkt_count_upstream("terminated", line_id)
-        old_dropped = self.read_pkt_count_upstream("dropped", line_id)
+        old_terminated = self.read_byte_count_upstream("terminated", line_id)
+        old_dropped = self.read_byte_count_upstream("dropped", line_id)
+
         old_control = self.read_pkt_count_upstream("control", line_id)
 
         self.runPopAndRouteTest(
@@ -1412,19 +1420,21 @@ class PppoeTest(DoubleVlanTerminationTest):
         # Verify that upstream counters were updated as expected.
         if not self.is_bmv2():
             time.sleep(1)
-        new_terminated = self.read_pkt_count_upstream("terminated", line_id)
-        new_dropped = self.read_pkt_count_upstream("dropped", line_id)
+        new_terminated = self.read_byte_count_upstream("terminated", line_id)
+        new_dropped = self.read_byte_count_upstream("dropped", line_id)
+
         new_control = self.read_pkt_count_upstream("control", line_id)
 
         # No control plane packets here.
         self.assertEqual(new_control, old_control)
 
+        # Using assertGreaterEqual because some targets may or may not count FCS
         if line_enabled:
-            self.assertEqual(new_terminated, old_terminated + 1)
+            self.assertGreaterEqual(new_terminated, old_terminated + len(pppoe_pkt))
             self.assertEqual(new_dropped, old_dropped)
         else:
             self.assertEqual(new_terminated, old_terminated)
-            self.assertEqual(new_dropped, old_dropped + 1)
+            self.assertGreaterEqual(new_dropped, old_dropped + len(pppoe_pkt))
 
     def runControlPacketInTest(self, pppoed_pkt, line_mapped=True):
         s_tag = vlan_id_outer = 888
@@ -1442,8 +1452,8 @@ class PppoeTest(DoubleVlanTerminationTest):
         pppoed_pkt = pkt_add_vlan(pppoed_pkt, vlan_vid=vlan_id_outer)
         pppoed_pkt = pkt_add_inner_vlan(pppoed_pkt, vlan_vid=vlan_id_inner)
 
-        old_terminated = self.read_pkt_count_upstream("terminated", line_id)
-        old_dropped = self.read_pkt_count_upstream("dropped", line_id)
+        old_terminated = self.read_byte_count_upstream("terminated", line_id)
+        old_dropped = self.read_byte_count_upstream("dropped", line_id)
         old_control = self.read_pkt_count_upstream("control", line_id)
 
         testutils.send_packet(self, self.port1, str(pppoed_pkt))
@@ -1452,8 +1462,9 @@ class PppoeTest(DoubleVlanTerminationTest):
 
         if not self.is_bmv2():
             time.sleep(1)
-        new_terminated = self.read_pkt_count_upstream("terminated", line_id)
-        new_dropped = self.read_pkt_count_upstream("dropped", line_id)
+        new_terminated = self.read_byte_count_upstream("terminated", line_id)
+        new_dropped = self.read_byte_count_upstream("dropped", line_id)
+
         new_control = self.read_pkt_count_upstream("control", line_id)
 
         # Only control plane packets.
@@ -1495,8 +1506,8 @@ class PppoeTest(DoubleVlanTerminationTest):
         exp_pkt = pkt_route(exp_pkt, olt_mac)
         exp_pkt = pkt_decrement_ttl(exp_pkt)
 
-        old_rx_count = self.read_pkt_count_downstream_rx(line_id)
-        old_tx_count = self.read_pkt_count_downstream_tx(line_id)
+        old_rx_count = self.read_byte_count_downstream_rx(line_id)
+        old_tx_count = self.read_byte_count_downstream_tx(line_id)
 
         self.runRouteAndPushTest(
             pkt=pkt, next_hop_mac=olt_mac, exp_pkt=exp_pkt,
@@ -1505,11 +1516,12 @@ class PppoeTest(DoubleVlanTerminationTest):
 
         if not self.is_bmv2():
             time.sleep(1)
-        nex_rx_count = self.read_pkt_count_downstream_rx(line_id)
-        nex_tx_count = self.read_pkt_count_downstream_tx(line_id)
+        new_rx_count = self.read_byte_count_downstream_rx(line_id)
+        new_tx_count = self.read_byte_count_downstream_tx(line_id)
 
-        self.assertEqual(nex_rx_count, old_rx_count + 1)
+        # Using assertGreaterEqual because some targets may or may not count FCS
+        self.assertGreaterEqual(new_rx_count, old_rx_count + len(pkt))
         if line_enabled:
-            self.assertEqual(nex_tx_count, old_tx_count + 1)
+            self.assertGreaterEqual(new_tx_count, old_tx_count + len(pkt))
         else:
-            self.assertEqual(nex_tx_count, old_tx_count)
+            self.assertEqual(new_tx_count, old_tx_count)
