@@ -11,14 +11,12 @@ ONOS_ROOT=${1}
 # Pass all other arguments to make
 TEST_CASE=${@:2}
 
-bash ${TRAVIS_DIR}/veth_setup.sh > /dev/null
-
 err_report() {
     echo
     echo "************************************************"
     echo "BMV2 LOG"
     echo "************************************************"
-    cat /tmp/bmv2-ptf.log
+    cat ${FP4TEST_DIR}/travis/log/switch.log
     echo
     echo "************************************************"
     echo "PTF LOG"
@@ -37,8 +35,8 @@ cd ${PTF_DIR}
 echo "************************************************"
 echo "STARTING PTF TESTS..."
 echo "************************************************"
-
-ONOS_ROOT=${ONOS_ROOT} make ${TEST_CASE} 2>&1
+sleep 2
+ONOS_ROOT=${ONOS_ROOT} make -f Makefile ${TEST_CASE} 2>&1
 
 echo "************************************************"
 echo "ALL PTF TESTS PASSED :)"
