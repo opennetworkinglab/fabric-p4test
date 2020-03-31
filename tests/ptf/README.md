@@ -12,14 +12,6 @@ in the Python path.
 pre-compiled artifacts (no need to build ONOS, simply clone the repo)
 - Set `ONOS_ROOT` env variable to the location where you cloned the ONOS repo
 
-### ONOS+P4 Developer VM
-
-Alternatively, you can download this VM with all the necessary dependencies already installed:
-
-[Instructions to download and use the ONOS+P4 Developer VM](https://wiki.onosproject.org/x/FYnV#P4RuntimesupportinONOS-ONOS+P4DeveloperVM)
-
-The link provides also instructions to use Vagrant to build the VM locally.
-
 
 ## Before running the tests
 
@@ -44,14 +36,14 @@ If running tests on BMv2, you can use the pre-compiled artifacts
 (BMv2 JSON and P4Info) distributed with ONOS. These files are located under:
 
 ```
-$ONOS_ROOT/pipelines/fabric/src/main/resources/p4c-out
+$ONOS_ROOT/pipelines/fabric/impl/src/main/resources/p4c-out
 ```
 
 If you need to make changes to fabric.p4, you can recompile the
 P4 program using the following commands:
 
 ```
-cd $ONOS_ROOT/pipelines/fabric/src/main/resources
+cd $ONOS_ROOT/pipelines/fabric/impl/src/main/resources
 make
 ```
 
@@ -68,7 +60,7 @@ Compile fabric.p4 with the desired backend and preprocessor flags. For example,
 to compile for Tofino:
 
 ```
-cd $ONOS_ROOT/pipelines/fabric/src/main/resources/
+cd $ONOS_ROOT/pipelines/fabric/impl/src/main/resources/
 p4c --target tofino --arch v1model -DWITH_SPGW -o fabric-spgw.out \
     --p4runtime-format text --p4runtime-file fabric-spgw.out/p4info.proto \
     fabric.p4 
@@ -107,8 +99,8 @@ under `/home/sdn`.
 
     ```
     sudo ./ptf_runner.py --device bmv2 \
-        --p4info ${ONOS_ROOT}/pipelines/fabric/src/main/resources/p4c-out/fabric/bmv2/default/p4info.txt \
-        --bmv2-json ${ONOS_ROOT}/pipelines/fabric/src/main/resources/p4c-out/fabric/bmv2/default/bmv2.json \
+        --p4info ${ONOS_ROOT}/pipelines/fabric/impl/src/main/resources/p4c-out/fabric/bmv2/default/p4info.txt \
+        --bmv2-json ${ONOS_ROOT}/pipelines/fabric/impl/src/main/resources/p4c-out/fabric/bmv2/default/bmv2.json \
         --ptf-dir fabric.ptf --port-map port_map.veth.json \
         all ^spgw
     ```

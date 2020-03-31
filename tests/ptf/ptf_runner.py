@@ -25,12 +25,12 @@ import struct
 import subprocess
 import sys
 import threading
+import time
 from collections import OrderedDict
 
 import google.protobuf.text_format
 import grpc
-from p4.tmp import p4config_pb2
-from p4.v1 import p4runtime_pb2
+from p4.v1 import p4runtime_pb2, p4runtime_pb2_grpc
 
 from bmv2 import Bmv2Switch
 
@@ -55,7 +55,7 @@ def check_ifaces(ifaces):
     Checks that required interfaces exist.
     """
     ifconfig_out = subprocess.check_output(['ifconfig'])
-    iface_list = re.findall(r'^(\S+)', ifconfig_out, re.S | re.M)
+    iface_list = re.findall(r'^([a-zA-Z0-9]+)', ifconfig_out, re.S | re.M)
     present_ifaces = set(iface_list)
     ifaces = set(ifaces)
     return ifaces <= present_ifaces
@@ -65,26 +65,23 @@ def build_bmv2_config(bmv2_json_path):
     """
     Builds the device config for BMv2
     """
-    device_config = p4config_pb2.P4DeviceConfig()
-    device_config.reassign = True
     with open(bmv2_json_path) as f:
-        device_config.device_data = f.read()
+        device_config = f.read()
     return device_config
 
 
 def build_tofino_config(prog_name, bin_path, cxt_json_path):
-    device_config = p4config_pb2.P4DeviceConfig()
     with open(bin_path, 'rb') as bin_f:
         with open(cxt_json_path, 'r') as cxt_json_f:
-            device_config.device_data = ""
-            device_config.device_data += struct.pack("<i", len(prog_name))
-            device_config.device_data += prog_name
+            device_config = ""
+            device_config += struct.pack("<i", len(prog_name))
+            device_config += prog_name
             tofino_bin = bin_f.read()
-            device_config.device_data += struct.pack("<i", len(tofino_bin))
-            device_config.device_data += tofino_bin
+            device_config += struct.pack("<i", len(tofino_bin))
+            device_config += tofino_bin
             cxt_json = cxt_json_f.read()
-            device_config.device_data += struct.pack("<i", len(cxt_json))
-            device_config.device_data += cxt_json
+            device_config += struct.pack("<i", len(cxt_json))
+            device_config += cxt_json
     return device_config
 
 
@@ -94,13 +91,14 @@ def update_config(p4info_path, bmv2_json_path, tofino_bin_path,
     Performs a SetForwardingPipelineConfig on the device
     """
     channel = grpc.insecure_channel(grpc_addr)
-    stub = p4runtime_pb2.P4RuntimeStub(channel)
+    stub = p4runtime_pb2_grpc.P4RuntimeStub(channel)
 
     info("Sending P4 config")
 
     # Send master arbitration via stream channel
     # This should go in library, to be re-used also by base_test.py.
     stream_out_q = Queue.Queue()
+    stream_in_q = Queue.Queue()
 
     def stream_req_iterator():
         while True:
@@ -109,8 +107,24 @@ def update_config(p4info_path, bmv2_json_path, tofino_bin_path,
                 break
             yield p
 
-    def stream_recv(s):
-        pass
+    def stream_recv(stream):
+        for p in stream:
+            stream_in_q.put(p)
+
+    def get_stream_packet(type_, timeout=1):
+        start = time.time()
+        try:
+            while True:
+                remaining = timeout - (time.time() - start)
+                if remaining < 0:
+                    break
+                msg = stream_in_q.get(timeout=remaining)
+                if not msg.HasField(type_):
+                    continue
+                return msg
+        except:  # timeout expired
+            pass
+        return None
 
     stream = stub.StreamChannel(stream_req_iterator())
     stream_recv_thread = threading.Thread(target=stream_recv, args=(stream,))
@@ -123,6 +137,11 @@ def update_config(p4info_path, bmv2_json_path, tofino_bin_path,
     election_id.high = 0
     election_id.low = 1
     stream_out_q.put(req)
+
+    rep = get_stream_packet("arbitration", timeout=5)
+    if rep is None:
+        error("Failed to establish handshake")
+        return False
 
     try:
         # Set pipeline config.
@@ -139,7 +158,7 @@ def update_config(p4info_path, bmv2_json_path, tofino_bin_path,
         else:
             device_config = build_tofino_config("name", tofino_bin_path,
                                                 tofino_cxt_json_path)
-        config.p4_device_config = device_config.SerializeToString()
+        config.p4_device_config = device_config
         request.action = p4runtime_pb2.SetForwardingPipelineConfigRequest.VERIFY_AND_COMMIT
         try:
             stub.SetForwardingPipelineConfig(request)
@@ -154,7 +173,7 @@ def update_config(p4info_path, bmv2_json_path, tofino_bin_path,
 
 
 def run_test(p4info_path, grpc_addr, device_id, cpu_port, ptfdir, port_map_path,
-             platform=None, extra_args=()):
+             device, platform=None, extra_args=()):
     """
     Runs PTF tests included in provided directory.
     Device must be running and configfured with appropriate P4 program.
@@ -191,6 +210,7 @@ def run_test(p4info_path, grpc_addr, device_id, cpu_port, ptfdir, port_map_path,
     test_params += ';grpcaddr=\'{}\''.format(grpc_addr)
     test_params += ';device_id=\'{}\''.format(device_id)
     test_params += ';cpu_port=\'{}\''.format(cpu_port)
+    test_params += ';device=\'{}\''.format(device)
     if platform is not None:
         test_params += ';pltfm=\'{}\''.format(platform)
     cmd.append('--test-params={}'.format(test_params))
@@ -263,6 +283,10 @@ def main():
     parser.add_argument('--skip-test',
                         help='Skip test execution (useful to perform only pipeline configuration)',
                         action="store_true", default=False)
+    parser.add_argument('--skip-bmv2-start',
+                        help='Skip switch start (requires that the switch be started manually \
+                        beforehand, only applies to bmv2 and bmv2-stratum targets)',
+                        action="store_true", default=False)
     args, unknown_args = parser.parse_known_args()
 
     if not check_ptf():
@@ -299,21 +323,22 @@ def main():
     grpc_port = args.grpc_addr.split(':')[1]
 
     bmv2_sw = None
-    if device == 'bmv2':
-        bmv2_sw = Bmv2Switch(device_id=args.device_id,
-                             port_map_path=args.port_map,
-                             grpc_port=grpc_port,
-                             cpu_port=args.cpu_port,
-                             loglevel='debug')
-        bmv2_sw.start()
-    elif device == 'stratum-bmv2':
-        bmv2_sw = Bmv2Switch(device_id=args.device_id,
-                             port_map_path=args.port_map,
-                             grpc_port=grpc_port,
-                             cpu_port=args.cpu_port,
-                             loglevel='debug',
-                             is_stratum=True)
-        bmv2_sw.start()
+    if args.skip_bmv2_start is False:
+        if device == 'bmv2':
+            bmv2_sw = Bmv2Switch(device_id=args.device_id,
+                                 port_map_path=args.port_map,
+                                 grpc_port=grpc_port,
+                                 cpu_port=args.cpu_port,
+                                 loglevel='trace')
+            bmv2_sw.start()
+        elif device == 'stratum-bmv2':
+            bmv2_sw = Bmv2Switch(device_id=args.device_id,
+                                 port_map_path=args.port_map,
+                                 grpc_port=grpc_port,
+                                 cpu_port=args.cpu_port,
+                                 loglevel='trace',
+                                 is_stratum=True)
+            bmv2_sw.start()
 
     try:
 
@@ -339,6 +364,7 @@ def main():
                                ptfdir=args.ptf_dir,
                                port_map_path=args.port_map,
                                platform=args.platform,
+                               device=device,
                                extra_args=unknown_args)
 
         if bmv2_sw is not None:

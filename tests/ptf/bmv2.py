@@ -33,14 +33,20 @@ def get_stratum_root():
     if 'STRATUM_ROOT' in os.environ:
         return os.environ['STRATUM_ROOT']
     else:
-        return '/home/sdn/stratum'
+        raise Exception("STRATUM_ROOT env not defined")
 
 
-STRATUM_ROOT = get_stratum_root()
-STRATUM_BINARY = STRATUM_ROOT + '/bazel-bin/stratum/hal/bin/bmv2/stratum_bmv2'
-STRATUM_CONFIG_DIR = '/tmp/stratum-bmv2'
-STRATUM_LD_PATH = 'LD_LIBRARY_PATH=/home/sdn/bmv2_install/lib'
-INITIAL_PIPELINE = STRATUM_ROOT + '/stratum/hal/bin/bmv2/dummy.json'
+def get_stratum_ld_path():
+    if 'BMV2_INSTALL' in os.environ:
+        return 'LD_LIBRARY_PATH=%s/lib' % os.environ['BMV2_INSTALL']
+    else:
+        return ''
+
+
+STRATUM_BMV2 = 'stratum_bmv2'
+STRATUM_BINARY = '/bazel-bin/stratum/hal/bin/bmv2/' + STRATUM_BMV2
+STRATUM_LD_PATH = get_stratum_ld_path()
+INITIAL_PIPELINE = '/stratum/hal/bin/bmv2/dummy.json'
 
 
 def check_bmv2_target(target):
@@ -85,14 +91,15 @@ class Bmv2Switch:
             raise Exception("%s executable not found" % BMV2_TARGET_EXE)
 
     def get_stratum_cmd(self, port_map):
+        stratumRoot = get_stratum_root()
         args = [
-            STRATUM_BINARY,
+            stratumRoot + STRATUM_BINARY,
             '--device_id=%s' % str(self.device_id),
-            '--forwarding_pipeline_configs_file=%s/config.txt' % STRATUM_CONFIG_DIR,
-            '--persistent_config_dir=' + STRATUM_CONFIG_DIR,
-            '--initial_pipeline=' + INITIAL_PIPELINE,
+            '--forwarding_pipeline_configs_file=/dev/null',
+            '--persistent_config_dir=/dev/null',
+            '--initial_pipeline=' + stratumRoot + INITIAL_PIPELINE,
             '--cpu_port=%s' % self.cpu_port,
-            '--url=0.0.0.0:%s' % self.grpc_port,
+            '--external-stratum-urls=0.0.0.0:%s' % self.grpc_port,
         ]
         for port, intf in port_map.items():
             args.append('%d@%s' % (port, intf))
@@ -130,12 +137,14 @@ class Bmv2Switch:
 
         if self.is_stratum is True:
             cmdString = self.get_stratum_cmd(port_map)
+            exeName = STRATUM_BMV2
             ld_path = STRATUM_LD_PATH + " "
         else:
+            exeName = BMV2_TARGET_EXE
             cmdString = self.get_cmd(port_map)
             ld_path = ""
 
-        logger.info("\nStarting BMv2... %s\n" % cmdString)
+        logger.info("\nStarting %s... %s\n" % (exeName, cmdString))
 
         # Start the switch
         try:
