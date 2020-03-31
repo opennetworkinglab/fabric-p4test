@@ -35,7 +35,6 @@ cd ${PTF_DIR}
 echo "************************************************"
 echo "STARTING PTF TESTS..."
 echo "************************************************"
-sleep 2
 ONOS_ROOT=${ONOS_ROOT} make -f Makefile ${TEST_CASE} 2>&1
 
 echo "************************************************"
