@@ -415,10 +415,13 @@ class FabricTest(P4RuntimeTest):
         egress_port_ = stringify(egress_port, 2)
         smac_ = mac_to_binary(smac)
         dmac_ = mac_to_binary(dmac)
-        self.add_next_hashed_indirect_action(
+        self.add_next_hashed_group_action(
             next_id,
-            "next.routing_hashed",
-            [("port_num", egress_port_), ("smac", smac_), ("dmac", dmac_)])
+            egress_port,
+            [
+                ["next.routing_hashed", [("port_num", egress_port_), ("smac", smac_), ("dmac", dmac_)]]
+            ]
+        )
 
     def add_next_routing_simple(self, next_id, egress_port, smac, dmac):
         next_id_ = stringify(next_id, 4)
