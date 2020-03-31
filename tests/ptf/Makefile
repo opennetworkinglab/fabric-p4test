@@ -1,4 +1,4 @@
-base_cmd := ./ptf_runner.py --port-map port_map.veth.json --ptf-dir fabric.ptf --cpu-port 255 --device-id 1
+base_cmd := ./ptf_runner.py --port-map port_map.veth.json --ptf-dir fabric.ptf --cpu-port 255 --device-id 1 --grpc-addr dut:28000 --skip-bmv2-start
 p4c_out := ${ONOS_ROOT}/pipelines/fabric/impl/src/main/resources/p4c-out
 bmv2_out := bmv2/default
 
