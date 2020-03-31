@@ -345,12 +345,28 @@ def main():
         success = True
 
         if not args.skip_config:
-            success = update_config(p4info_path=args.p4info,
-                                    bmv2_json_path=bmv2_json,
-                                    tofino_bin_path=tofino_bin,
-                                    tofino_cxt_json_path=tofino_ctx_json,
-                                    grpc_addr=args.grpc_addr,
-                                    device_id=args.device_id)
+            _MAX_RETRIES = 30
+            _SLEEP_TIME = 1
+            retries = 0
+            # Retry 30 times, waiting for Stratum or other P4Runtime server to be up and running
+            while True:
+                success = update_config(p4info_path=args.p4info,
+                                        bmv2_json_path=bmv2_json,
+                                        tofino_bin_path=tofino_bin,
+                                        tofino_cxt_json_path=tofino_ctx_json,
+                                        grpc_addr=args.grpc_addr,
+                                        device_id=args.device_id)
+                retries += 1
+                if success:
+                    info("{} - SetForwardingPipelineConfig successful!".format(retries))
+                    break
+                elif retries >= _MAX_RETRIES:
+                    success = False
+                    info("SetForwardingPipelineConfig failed {} retries".format(_MAX_RETRIES))
+                    break
+                else:
+                    info("{} - SetForwardingPipelineConfig failed, retry in {} sec".format(retries, _SLEEP_TIME))
+                    time.sleep(_SLEEP_TIME)
         if not success:
             if bmv2_sw is not None:
                 bmv2_sw.kill()
