@@ -11,7 +11,6 @@ ONOS_ROOT=${1}
 # Pass all other arguments to make
 TEST_CASE=${@:2}
 
-bash ${TRAVIS_DIR}/veth_setup.sh > /dev/null
 
 err_report() {
     echo
