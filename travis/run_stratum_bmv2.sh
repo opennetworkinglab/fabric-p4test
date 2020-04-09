@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 
-/fabric-p4test/travis/veth_setup.sh;
+set -e
 
-# Clean write-reqs.txt otherwise request are appended to the file
-rm -f /fabric-p4test/travis/log/write-reqs.txt
+/fabric-p4test/travis/veth_setup.sh
+
+# Clean anc change-owner of write-reqs.txt and switch.log, otherwise the owner is root
+echo "" > /fabric-p4test/travis/log/write-reqs.txt
 
 stratum_bmv2 -device_id=1 \
 	-chassis_config_file=/fabric-p4test/travis/chassis_config.txt \

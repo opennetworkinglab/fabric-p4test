@@ -1,5 +1,3 @@
 *.pyc
 .idea
 *.log
-/travis/log/*
-
