@@ -22,6 +22,7 @@ testerRunName=fabric-p4test-${radomNumber}
 function ctrl_c() {
         echo " Stopping ${testerRunName}..."
         docker stop -t0 ${testerRunName}
+        docker rm ${testerRunName}
         echo " Stopping ${stratumRunName}..."
         docker stop -t0 ${stratumRunName}
 }
@@ -29,7 +30,7 @@ trap ctrl_c INT
 
 # Run stratum-bmv2
 echo " Starting ${stratumRunName}..."
-docker run --name ${stratumRunName} -d --privileged \
+docker run --name ${stratumRunName} -d --privileged --rm \
     --entrypoint "/fabric-p4test/travis/run_stratum_bmv2.sh" \
     -v ${DIR}:/fabric-p4test \
     ${stratumImageName}
@@ -37,7 +38,7 @@ sleep 2
 
 # Run and show log (also stored in run.log)
 echo " Starting ${testerRunName}..."
-docker run --name ${testerRunName} -d --privileged --rm \
+docker run --name ${testerRunName} -d --privileged \
     --network "container:${stratumRunName}" \
     -v ${DIR}:/fabric-p4test \
     -v ${ONOS_ROOT}:/onos \
@@ -45,5 +46,10 @@ docker run --name ${testerRunName} -d --privileged --rm \
     bash /fabric-p4test/travis/run_test.sh /onos ${@}
 docker logs -f ${testerRunName} | tee ${DIR}/run.log
 
+exitValTest=$(docker inspect ${testerRunName} --format='{{.State.ExitCode}}')
+docker rm ${testerRunName}
+
 echo " Stopping ${stratumRunName}..."
 docker stop -t0 ${stratumRunName}
+
+exit ${exitValTest}

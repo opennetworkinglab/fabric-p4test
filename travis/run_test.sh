@@ -15,9 +15,9 @@ TEST_CASE=${@:2}
 err_report() {
     echo
     echo "************************************************"
-    echo "BMV2 LOG"
+    echo "STRATUM-BMV2 LOG"
     echo "************************************************"
-    cat /tmp/bmv2-ptf.log
+    cat ${TRAVIS_DIR}/log/switch.log
     echo
     echo "************************************************"
     echo "PTF LOG"
