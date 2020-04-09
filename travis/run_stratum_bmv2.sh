@@ -4,7 +4,7 @@ set -e
 
 /fabric-p4test/travis/veth_setup.sh
 
-# Clean anc change-owner of write-reqs.txt and switch.log, otherwise the owner is root
+# Clean write-reqs.txt
 echo "" > /fabric-p4test/travis/log/write-reqs.txt
 
 stratum_bmv2 -device_id=1 \
