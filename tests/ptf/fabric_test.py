@@ -24,6 +24,9 @@ from scapy.contrib.mpls import MPLS
 from scapy.layers.inet import IP, UDP, TCP
 from scapy.layers.l2 import Ether, Dot1Q
 from scapy.layers.ppp import PPPoE, PPP
+from scapy.fields import BitField, ByteField, ShortField, IntField
+from scapy.packet import bind_layers
+
 
 import xnt
 from base_test import P4RuntimeTest, stringify, mac_to_binary, ipv4_to_binary
@@ -128,9 +131,35 @@ PPPOED_CODES = (
 )
 
 
-def make_gtp(msg_len, teid, flags=0x30, msg_type=0xff):
-    """Convenience function since GTP header has no scapy support"""
-    return struct.pack(">BBHL", flags, msg_type, msg_len, teid)
+
+try:
+    from scapy.contrib.gtp import GTP_U_Header as GTPU
+except:
+    # If we couldn't import GTP-U then we define our own
+    class GTPU(Packet):
+        name = "GTP-U Header"
+        fields_desc = [
+            BitField("version", 1, 3),
+            BitField("PT", 1, 1),
+            BitField("reserved", 0, 1),
+            BitField("E", 0, 1),
+            BitField("S", 0, 1),
+            BitField("PN", 0, 1),
+            ByteField("gtp_type", 255),
+            ShortField("length", None),
+            IntField("teid", 0)
+        ]
+        def post_build(self, pkt, payload):
+            pkt += payload
+            # Set the length field if it is unset
+            if self.length is None:
+                length = len(pkt) - 8
+                pkt = pkt[:2] + struct.pack("!H", length) + pkt[4:]
+            return pkt
+    # Register it with scapy for dissection
+    bind_layers(UDP, GTPU, dport=UDP_GTP_PORT)
+    bind_layers(GTPU, IP)
+
 
 
 def pkt_mac_swap(pkt):
@@ -179,7 +208,7 @@ def pkt_add_gtp(pkt, out_ipv4_src, out_ipv4_dst, teid):
            IP(src=out_ipv4_src, dst=out_ipv4_dst, tos=0,
               id=0x1513, flags=0, frag=0) / \
            UDP(sport=UDP_GTP_PORT, dport=UDP_GTP_PORT, chksum=0) / \
-           make_gtp(len(payload), teid) / \
+           GTPU(teid=teid) / \
            payload
 
 
@@ -1004,36 +1033,170 @@ class PacketInTest(FabricTest):
 
 class SpgwSimpleTest(IPv4UnicastTest):
 
-    def setup_uplink(self, s1u_sgw_ipv4):
+    def add_ue_pool(self, ip_prefix, prefix_len):
         req = self.get_new_write_request()
-        s1u_sgw_ipv4_ = ipv4_to_binary(s1u_sgw_ipv4)
+
+        ip_prefix_ = ipv4_to_binary(ip_prefix)
+
         self.push_update_add_entry_to_action(
             req,
-            "spgw_ingress.s1u_filter_table",
-            [self.Exact("gtp_ipv4_dst", s1u_sgw_ipv4_)],
-            "nop", [])
+            "spgw_ingress.downlink_filter_table",
+            [self.Lpm("ipv4_prefix", ip_prefix_, prefix_len)],
+            "nop", [],
+        )
         self.write_request(req)
 
-    def setup_downlink(self, s1u_sgw_ipv4, s1u_enb_ipv4, ue_ipv4, teid):
+    def add_s1u_iface(self, s1u_addr):
         req = self.get_new_write_request()
-        s1u_enb_ipv4_ = ipv4_to_binary(s1u_enb_ipv4)
-        s1u_sgw_ipv4_ = ipv4_to_binary(s1u_sgw_ipv4)
-        end_point_ipv4_ = ipv4_to_binary(ue_ipv4)
-        teid_ = stringify(teid, 4)
+        s1u_addr_ = ipv4_to_binary(s1u_addr)
+
         self.push_update_add_entry_to_action(
             req,
-            "spgw_ingress.dl_sess_lookup",
-            [self.Exact("ipv4_dst", end_point_ipv4_)],
-            "spgw_ingress.set_dl_sess_info",
-            [("teid", teid_), ("s1u_enb_addr", s1u_enb_ipv4_),
-             ("s1u_sgw_addr", s1u_sgw_ipv4_)])
+            "spgw_ingress.uplink_filter_table",
+            [self.Exact("gtp_ipv4_dst", s1u_addr_)],
+            "nop", [],
+        )
         self.write_request(req)
+
+    def add_uplink_pdr(self, ctr_id, far_id, ue_addr,
+                        teid, tunnel_dst_addr):
+        req = self.get_new_write_request()
+        self.push_update_add_entry_to_action(
+            req,
+            "spgw_ingress.uplink_pdr_lookup",
+            [
+                self.Exact("ue_addr", ipv4_to_binary(ue_addr)),
+                self.Exact("teid", stringify(teid, 4)),
+                self.Exact("tunnel_ipv4_dst", ipv4_to_binary(tunnel_dst_addr)),
+            ],
+            "spgw_ingress.set_pdr_attributes",
+            [
+                ("ctr_id", stringify(ctr_id, 4)),
+                ("far_id", stringify(far_id, 4))
+            ],
+        )
+        self.write_request(req)
+
+    def add_downlink_pdr(self, ctr_id, far_id, ue_addr):
+        req = self.get_new_write_request()
+
+        self.push_update_add_entry_to_action(
+            req,
+            "spgw_ingress.downlink_pdr_lookup",
+            [self.Exact("ue_addr", ipv4_to_binary(ue_addr))],
+            "spgw_ingress.set_pdr_attributes",
+            [
+                ("ctr_id", stringify(ctr_id, 4)),
+                ("far_id", stringify(far_id, 4))
+            ],
+        )
+        self.write_request(req)
+
+    def _add_far(self, far_id, action_name, action_params):
+        req = self.get_new_write_request()
+        self.push_update_add_entry_to_action(
+            req,
+            "spgw_ingress.far_lookup",
+            [self.Exact("far_id", stringify(far_id, 4))],
+            action_name,
+            action_params,
+        )
+        self.write_request(req)
+
+    def add_normal_far(self, far_id, drop=False, notify_cp=False):
+        return self._add_far(
+            far_id,
+            "spgw_ingress.load_normal_far_attributes",
+            [
+                ("drop", stringify(drop, 1)),
+                ("notify_cp", stringify(notify_cp, 1)),
+            ]
+        )
+
+    def add_tunnel_far(self, far_id, teid, tunnel_src_addr, tunnel_dst_addr,
+                       drop=False, notify_cp=False):
+        return self._add_far(
+            far_id,
+            "spgw_ingress.load_tunnel_far_attributes",
+            [
+                ("drop", stringify(drop, 1)),
+                ("notify_cp", stringify(notify_cp, 1)),
+                ("teid", stringify(teid, 4)),
+                ("tunnel_src_addr", ipv4_to_binary(tunnel_src_addr)),
+                ("tunnel_dst_addr", ipv4_to_binary(tunnel_dst_addr)),
+            ]
+        )
+
+
+    def add_flexible_pdr(self, ctr_id, far_id,
+                s1u_sgw_addr=None, s1u_sgw_addr_mask=None,
+                teid=None, teid_mask=None,
+                src_addr=None, src_addr_mask=None,
+                dst_addr=None, dst_addr_mask=None,
+                ip_proto=None, ip_proto_mask=None,
+                l4_sport=None, l4_sport_mask=None,
+                l4_dport=None, l4_dport_mask=None,
+                uplink=False, downlink=False,):
+
+        raise Exception("Flexible PDR insertion not yet implemented")
+        assert(downlink or uplink)
+
+        req = self.get_new_write_request()
+
+        action_name = "spgw_ingress.set_pdr_attributes"
+        action_args = [("ctr_id", stringify(ctr_id, 4)),
+                        ("far_id", stringify(far_id, 4))]
+
+        ALL_ONES_32 = stringify((1<<32) - 1, 4)
+        ALL_ONES_16 = stringify((1<<16) - 1, 2)
+        ALL_ONES_8  = stringify((1<< 8) - 1, 1)
+
+        match_keys = []
+        if src_addr:
+            match_keys.append(self.Ternary("ipv4_src", ipv4_to_binary(src_addr), ))
+
+
+    def setup_uplink(self, enb_out_pkt, ctr_id, far_id=None):
+
+        if far_id is None:
+            far_id = 23 # 23 is the most random number less than 100
+
+        tunnel_dst = enb_out_pkt[IP].dst
+        teid = enb_out_pkt[GTPU].teid
+        ue_addr = enb_out_pkt[GTPU].payload[IP].src
+
+        self.add_s1u_iface(tunnel_dst)
+        self.add_uplink_pdr(
+            ctr_id=ctr_id,
+            far_id=far_id,
+            ue_addr=ue_addr,
+            teid=teid,
+            tunnel_dst_addr=tunnel_dst)
+        self.add_normal_far(far_id=far_id)
+
+
+    def setup_downlink(self, exp_pkt, ctr_id, far_id=None):
+        if far_id is None:
+            far_id = 24 # the second most random  number
+
+        tunnel_src = exp_pkt[IP].src
+        tunnel_dst = exp_pkt[IP].dst
+        teid = exp_pkt[GTPU].teid
+        ue_addr = exp_pkt[GTPU].payload[IP].dst
+
+        self.add_ue_pool(ip_prefix=ue_addr, prefix_len=32)
+        self.add_downlink_pdr(ctr_id=ctr_id, far_id=far_id, ue_addr=ue_addr)
+        self.add_tunnel_far(
+            far_id=far_id,
+            teid=teid,
+            tunnel_src_addr=tunnel_src,
+            tunnel_dst_addr=tunnel_dst)
+
 
     def runUplinkTest(self, ue_out_pkt, tagged1, tagged2, mpls):
 
+        ctr_id = 1
         dst_mac = HOST2_MAC
-
-        self.setup_uplink(S1U_SGW_IPV4)
 
         gtp_pkt = pkt_add_gtp(ue_out_pkt, out_ipv4_src=S1U_ENB_IPV4,
                               out_ipv4_dst=S1U_SGW_IPV4, teid=TEID_1)
@@ -1047,17 +1210,23 @@ class SpgwSimpleTest(IPv4UnicastTest):
         if tagged2:
             exp_pkt = pkt_add_vlan(exp_pkt, VLAN_ID_2)
 
+        self.setup_uplink(gtp_pkt, ctr_id)
+
+        # TODO: read PDR counter here
+
         self.runIPv4UnicastTest(pkt=gtp_pkt, dst_ipv4=ue_out_pkt[IP].dst,
                                 next_hop_mac=dst_mac,
                                 prefix_len=32, exp_pkt=exp_pkt,
                                 tagged1=tagged1, tagged2=tagged2, mpls=mpls)
 
+        # TODO: verify PDR counter incremented here
+
+
     def runDownlinkTest(self, pkt, tagged1, tagged2, mpls):
 
+        ctr_id = 2
         dst_mac = HOST2_MAC
         ue_ipv4 = pkt[IP].dst
-
-        self.setup_downlink(S1U_SGW_IPV4, S1U_ENB_IPV4, ue_ipv4, TEID_1)
 
         exp_pkt = pkt.copy()
 
@@ -1072,9 +1241,17 @@ class SpgwSimpleTest(IPv4UnicastTest):
         if tagged2:
             exp_pkt = pkt_add_vlan(exp_pkt, VLAN_ID_2)
 
-        self.runIPv4UnicastTest(pkt=pkt, next_hop_mac=dst_mac,
+        self.setup_downlink(exp_pkt, ctr_id)
+
+        # TODO: read PDR counter here
+
+        self.runIPv4UnicastTest(pkt=pkt, dst_ipv4=exp_pkt[IP].dst,
+                                next_hop_mac=dst_mac,
                                 prefix_len=32, exp_pkt=exp_pkt,
                                 tagged1=tagged1, tagged2=tagged2, mpls=mpls)
+
+        # TODO: verify PDR counter incremented here
+
 
 
 class IntTest(IPv4UnicastTest):

@@ -118,7 +118,7 @@ class FabricIPv4UnicastGtpTest(IPv4UnicastTest):
         pkt = Ether(src=HOST1_MAC, dst=SWITCH_MAC) / \
               IP(src=HOST3_IPV4, dst=HOST4_IPV4) / \
               UDP(sport=UDP_GTP_PORT, dport=UDP_GTP_PORT) / \
-              make_gtp(20 + len(inner_udp), 0xeeffc0f0) / \
+              GTPU(teid=0xeeffc0f0) / \
               IP(src=HOST1_IPV4, dst=HOST2_IPV4) / \
               inner_udp
         self.runIPv4UnicastTest(pkt, next_hop_mac=HOST2_MAC)
