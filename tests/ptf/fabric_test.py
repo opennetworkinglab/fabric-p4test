@@ -130,35 +130,29 @@ PPPOED_CODES = (
     PPPOED_CODE_PADT,
 )
 
-
-
-try:
-    from scapy.contrib.gtp import GTP_U_Header as GTPU
-except:
-    # If we couldn't import GTP-U then we define our own
-    class GTPU(Packet):
-        name = "GTP-U Header"
-        fields_desc = [
-            BitField("version", 1, 3),
-            BitField("PT", 1, 1),
-            BitField("reserved", 0, 1),
-            BitField("E", 0, 1),
-            BitField("S", 0, 1),
-            BitField("PN", 0, 1),
-            ByteField("gtp_type", 255),
-            ShortField("length", None),
-            IntField("teid", 0)
-        ]
-        def post_build(self, pkt, payload):
-            pkt += payload
-            # Set the length field if it is unset
-            if self.length is None:
-                length = len(pkt) - 8
-                pkt = pkt[:2] + struct.pack("!H", length) + pkt[4:]
-            return pkt
-    # Register it with scapy for dissection
-    bind_layers(UDP, GTPU, dport=UDP_GTP_PORT)
-    bind_layers(GTPU, IP)
+class GTPU(Packet):
+    name = "GTP-U Header"
+    fields_desc = [
+        BitField("version", 1, 3),
+        BitField("PT", 1, 1),
+        BitField("reserved", 0, 1),
+        BitField("E", 0, 1),
+        BitField("S", 0, 1),
+        BitField("PN", 0, 1),
+        ByteField("gtp_type", 255),
+        ShortField("length", None),
+        IntField("teid", 0)
+    ]
+    def post_build(self, pkt, payload):
+        pkt += payload
+        # Set the length field if it is unset
+        if self.length is None:
+            length = len(pkt) - 8
+            pkt = pkt[:2] + struct.pack("!H", length) + pkt[4:]
+        return pkt
+# Register our GTPU header with scapy for dissection
+bind_layers(UDP, GTPU, dport=UDP_GTP_PORT)
+bind_layers(GTPU, IP)
 
 
 
@@ -1033,6 +1027,14 @@ class PacketInTest(FabricTest):
 
 class SpgwSimpleTest(IPv4UnicastTest):
 
+    def read_pkt_count(self, c_name, idx):
+        counter = self.read_counter(c_name, idx, typ="PACKETS")
+        return counter.data.packet_count
+
+    def read_byte_count(self, c_name, idx):
+        counter = self.read_counter(c_name, idx, typ="BYTES")
+        return counter.data.byte_count
+
     def add_ue_pool(self, ip_prefix, prefix_len):
         req = self.get_new_write_request()
 
@@ -1156,41 +1158,32 @@ class SpgwSimpleTest(IPv4UnicastTest):
             match_keys.append(self.Ternary("ipv4_src", ipv4_to_binary(src_addr), ))
 
 
-    def setup_uplink(self, enb_out_pkt, ctr_id, far_id=None):
+    def setup_uplink(self, s1u_sgw_addr, teid, ue_addr, ctr_id, far_id=None):
 
         if far_id is None:
             far_id = 23 # 23 is the most random number less than 100
 
-        tunnel_dst = enb_out_pkt[IP].dst
-        teid = enb_out_pkt[GTPU].teid
-        ue_addr = enb_out_pkt[GTPU].payload[IP].src
-
-        self.add_s1u_iface(tunnel_dst)
+        self.add_s1u_iface(s1u_sgw_addr)
         self.add_uplink_pdr(
             ctr_id=ctr_id,
             far_id=far_id,
             ue_addr=ue_addr,
             teid=teid,
-            tunnel_dst_addr=tunnel_dst)
+            tunnel_dst_addr=s1u_sgw_addr)
         self.add_normal_far(far_id=far_id)
 
 
-    def setup_downlink(self, exp_pkt, ctr_id, far_id=None):
+    def setup_downlink(self, s1u_sgw_addr, s1u_enb_addr, teid, ue_addr, ctr_id, far_id=None):
         if far_id is None:
             far_id = 24 # the second most random  number
-
-        tunnel_src = exp_pkt[IP].src
-        tunnel_dst = exp_pkt[IP].dst
-        teid = exp_pkt[GTPU].teid
-        ue_addr = exp_pkt[GTPU].payload[IP].dst
 
         self.add_ue_pool(ip_prefix=ue_addr, prefix_len=32)
         self.add_downlink_pdr(ctr_id=ctr_id, far_id=far_id, ue_addr=ue_addr)
         self.add_tunnel_far(
             far_id=far_id,
             teid=teid,
-            tunnel_src_addr=tunnel_src,
-            tunnel_dst_addr=tunnel_dst)
+            tunnel_src_addr=s1u_sgw_addr,
+            tunnel_dst_addr=s1u_enb_addr)
 
 
     def runUplinkTest(self, ue_out_pkt, tagged1, tagged2, mpls):
@@ -1210,16 +1203,26 @@ class SpgwSimpleTest(IPv4UnicastTest):
         if tagged2:
             exp_pkt = pkt_add_vlan(exp_pkt, VLAN_ID_2)
 
-        self.setup_uplink(gtp_pkt, ctr_id)
+        # def setup_uplink(self, s1u_sgw_addr, teid, ue_addr, ctr_id, far_id=None):
+        self.setup_uplink(
+            s1u_sgw_addr = S1U_SGW_IPV4,
+            teid = TEID_1,
+            ue_addr = ue_out_pkt[IP].src,
+            ctr_id = ctr_id
+           )
 
-        # TODO: read PDR counter here
+        ingress_pdr_pkt_ctr1 = self.read_pkt_count("spgw_ingress.pdr_counter", ctr_id)
 
         self.runIPv4UnicastTest(pkt=gtp_pkt, dst_ipv4=ue_out_pkt[IP].dst,
                                 next_hop_mac=dst_mac,
                                 prefix_len=32, exp_pkt=exp_pkt,
                                 tagged1=tagged1, tagged2=tagged2, mpls=mpls)
 
-        # TODO: verify PDR counter incremented here
+        # Verify the PDR packet counter increased
+        ingress_pdr_pkt_ctr2 = self.read_pkt_count("spgw_ingress.pdr_counter", ctr_id)
+        ctr_increase = ingress_pdr_pkt_ctr2 - ingress_pdr_pkt_ctr1
+        if ctr_increase != 1:
+            self.fail("PDR packet counter incremented by %d instead of 1!" % ctr_increase)
 
 
     def runDownlinkTest(self, pkt, tagged1, tagged2, mpls):
@@ -1241,16 +1244,28 @@ class SpgwSimpleTest(IPv4UnicastTest):
         if tagged2:
             exp_pkt = pkt_add_vlan(exp_pkt, VLAN_ID_2)
 
-        self.setup_downlink(exp_pkt, ctr_id)
+        self.setup_downlink(
+            s1u_sgw_addr = S1U_SGW_IPV4,
+            s1u_enb_addr = S1U_ENB_IPV4,
+            teid = TEID_1,
+            ue_addr = ue_ipv4,
+            ctr_id = ctr_id,
+        )
 
-        # TODO: read PDR counter here
+        ingress_pdr_pkt_ctr1 = self.read_pkt_count("spgw_ingress.pdr_counter", ctr_id)
 
         self.runIPv4UnicastTest(pkt=pkt, dst_ipv4=exp_pkt[IP].dst,
                                 next_hop_mac=dst_mac,
                                 prefix_len=32, exp_pkt=exp_pkt,
                                 tagged1=tagged1, tagged2=tagged2, mpls=mpls)
 
-        # TODO: verify PDR counter incremented here
+        # Verify the PDR packet counter increased
+        ingress_pdr_pkt_ctr2 = self.read_pkt_count("spgw_ingress.pdr_counter", ctr_id)
+        ctr_increase = ingress_pdr_pkt_ctr2 - ingress_pdr_pkt_ctr1
+        if ctr_increase != 1:
+            self.fail("PDR packet counter incremented by %d instead of 1!" % ctr_increase)
+
+
 
 
 
