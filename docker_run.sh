@@ -9,10 +9,14 @@ if [[ -z "${ONOS_ROOT}" ]]; then
     exit 1
 fi
 
+# For now let's make sure runs are reproducible by using a specific version of mn-stratum.
+# TODO: move this to .travis.yml and run tests on both latest and a known stable version
+MN_STRATUM_SHA="sha256:6cd25463f4b1589e1396fefe73583da499acfdfe8903f3d2b8e4180adc996ee3"
+
 radomNumber=${RANDOM}
 
 # Stratum BMv2
-stratumImageName=opennetworking/mn-stratum:latest
+stratumImageName=opennetworking/mn-stratum:latest@${MN_STRATUM_SHA}
 stratumRunName=stratum-bmv2-${radomNumber}
 
 # PTF Tester

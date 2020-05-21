@@ -32,8 +32,6 @@ import google.protobuf.text_format
 import grpc
 from p4.v1 import p4runtime_pb2, p4runtime_pb2_grpc
 
-from bmv2 import Bmv2Switch
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("PTF runner")
 
@@ -283,10 +281,6 @@ def main():
     parser.add_argument('--skip-test',
                         help='Skip test execution (useful to perform only pipeline configuration)',
                         action="store_true", default=False)
-    parser.add_argument('--skip-bmv2-start',
-                        help='Skip switch start (requires that the switch be started manually \
-                        beforehand, only applies to bmv2 and bmv2-stratum targets)',
-                        action="store_true", default=False)
     args, unknown_args = parser.parse_known_args()
 
     if not check_ptf():
@@ -320,63 +314,31 @@ def main():
         print "Port map path '{}' does not exist".format(args.port_map)
         sys.exit(1)
 
-    grpc_port = args.grpc_addr.split(':')[1]
+    success = True
 
-    bmv2_sw = None
-    if args.skip_bmv2_start is False:
-        if device == 'bmv2':
-            bmv2_sw = Bmv2Switch(device_id=args.device_id,
-                                 port_map_path=args.port_map,
-                                 grpc_port=grpc_port,
-                                 cpu_port=args.cpu_port,
-                                 loglevel='trace')
-            bmv2_sw.start()
-        elif device == 'stratum-bmv2':
-            bmv2_sw = Bmv2Switch(device_id=args.device_id,
-                                 port_map_path=args.port_map,
-                                 grpc_port=grpc_port,
-                                 cpu_port=args.cpu_port,
-                                 loglevel='trace',
-                                 is_stratum=True)
-            bmv2_sw.start()
+    if not args.skip_config:
+        success = update_config(p4info_path=args.p4info,
+                                bmv2_json_path=bmv2_json,
+                                tofino_bin_path=tofino_bin,
+                                tofino_cxt_json_path=tofino_ctx_json,
+                                grpc_addr=args.grpc_addr,
+                                device_id=args.device_id)
+    if not success:
+        sys.exit(2)
 
-    try:
+    if not args.skip_test:
+        success = run_test(p4info_path=args.p4info,
+                           device_id=args.device_id,
+                           grpc_addr=args.grpc_addr,
+                           cpu_port=args.cpu_port,
+                           ptfdir=args.ptf_dir,
+                           port_map_path=args.port_map,
+                           platform=args.platform,
+                           device=device,
+                           extra_args=unknown_args)
 
-        success = True
-
-        if not args.skip_config:
-            success = update_config(p4info_path=args.p4info,
-                                    bmv2_json_path=bmv2_json,
-                                    tofino_bin_path=tofino_bin,
-                                    tofino_cxt_json_path=tofino_ctx_json,
-                                    grpc_addr=args.grpc_addr,
-                                    device_id=args.device_id)
-        if not success:
-            if bmv2_sw is not None:
-                bmv2_sw.kill()
-            sys.exit(2)
-
-        if not args.skip_test:
-            success = run_test(p4info_path=args.p4info,
-                               device_id=args.device_id,
-                               grpc_addr=args.grpc_addr,
-                               cpu_port=args.cpu_port,
-                               ptfdir=args.ptf_dir,
-                               port_map_path=args.port_map,
-                               platform=args.platform,
-                               device=device,
-                               extra_args=unknown_args)
-
-        if bmv2_sw is not None:
-            bmv2_sw.kill()
-
-        if not success:
-            sys.exit(3)
-
-    except Exception:
-        if bmv2_sw is not None:
-            bmv2_sw.kill()
-        raise
+    if not success:
+        sys.exit(3)
 
 
 if __name__ == '__main__':

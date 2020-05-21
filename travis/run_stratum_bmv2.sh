@@ -16,7 +16,6 @@ stratum_bmv2 -device_id=1 \
 	-external-stratum-urls=0.0.0.0:28000 \
 	-local_stratum_url=localhost:28000 \
 	-write_req_log_file=/fabric-p4test/travis/log/write-reqs.txt \
-	-logtosyslog=false \
 	-logtostderr=true \
 	-bmv2_log_level debug \
 	-log_dir=/fabric-p4test/travis/log &> /fabric-p4test/travis/log/switch.log
