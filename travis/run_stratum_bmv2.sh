@@ -4,8 +4,8 @@ set -e
 
 /fabric-p4test/travis/veth_setup.sh
 
-# Clean write-reqs.txt
-echo "" > /fabric-p4test/travis/log/write-reqs.txt
+# Clean write-reqs.log
+echo "" > /fabric-p4test/travis/log/write-reqs.log
 
 stratum_bmv2 -device_id=1 \
 	-chassis_config_file=/fabric-p4test/travis/chassis_config.txt \
@@ -15,7 +15,7 @@ stratum_bmv2 -device_id=1 \
 	-cpu_port=255 \
 	-external-stratum-urls=0.0.0.0:28000 \
 	-local_stratum_url=localhost:28000 \
-	-write_req_log_file=/fabric-p4test/travis/log/write-reqs.txt \
+	-write_req_log_file=/fabric-p4test/travis/log/write-reqs.log \
 	-logtostderr=true \
 	-bmv2_log_level debug \
 	-log_dir=/fabric-p4test/travis/log &> /fabric-p4test/travis/log/switch.log

@@ -107,6 +107,7 @@ class FabricIPv4UnicastTest(IPv4UnicastTest):
                 self.doRunTest(pkt, HOST2_MAC, tagged[0], tagged[1])
 
 
+@group("bug")
 class FabricIPv4UnicastGtpTest(IPv4UnicastTest):
     @autocleanup
     def runTest(self):
@@ -215,6 +216,7 @@ class FabricIPv4UnicastGroupTestAllPortTcpSport(FabricTest):
             self, [exp_pkt_to2, exp_pkt_to3], [self.port2, self.port3])
 
 
+@group("bug")
 class FabricIPv4UnicastGroupTestAllPortTcpDport(FabricTest):
     @autocleanup
     def runTest(self):

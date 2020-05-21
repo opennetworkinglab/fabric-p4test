@@ -11,6 +11,9 @@ endef
 
 all: fabric fabric-bng fabric-spgw fabric-int fabric-spgw-int
 
+bug: set-cmd
+	$(call run_tests,fabric,bug)
+
 fabric: set-cmd
 ifndef TEST
 	$(eval TEST = all ^spgw ^int ^bng ^dth)
