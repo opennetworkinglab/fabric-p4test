@@ -12,6 +12,8 @@ env:
   global:
     - ONOS_BRANCH=master
     - PROFILES=all
+    - PTFTEST_IMAGE=fp4test
+    - ONOS_ROOT=/tmp/onos
 
 install:
   - docker build -t fp4test .
@@ -22,7 +24,7 @@ jobs:
       name: "PTF tests"
       script:
         - git clone --depth 1 https://github.com/opennetworkinglab/onos /tmp/onos -b $ONOS_BRANCH
-        - docker run --privileged --rm -v $PWD:/fp4test -v /tmp/onos:/onos fp4test bash /fp4test/travis/run_test.sh /onos $PROFILES
+        - ./docker_run.sh $PROFILES
     - stage: checkstyle
       name: "Checkstyle"
       install: skip
