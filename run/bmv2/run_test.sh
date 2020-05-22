@@ -2,8 +2,8 @@
 
 set -e
 
-TRAVIS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-FP4TEST_DIR=${TRAVIS_DIR}/../
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+FP4TEST_DIR=${DIR}/../../
 PTF_DIR=${FP4TEST_DIR}/tests/ptf
 
 # First argument is the location of the onos source tree
@@ -17,12 +17,12 @@ err_report() {
     echo "************************************************"
     echo "STRATUM-BMV2 LOG"
     echo "************************************************"
-    cat ${TRAVIS_DIR}/log/switch.log
+    cat "${DIR}"/log/stratum_bmv2.log
     echo
     echo "************************************************"
     echo "PTF LOG"
     echo "************************************************"
-    cat ${PTF_DIR}/ptf.log
+    cat "${PTF_DIR}"/ptf.log
 
     echo "************************************************"
     echo "SOME PTF TESTS FAILED :("
@@ -31,7 +31,7 @@ err_report() {
 }
 
 trap 'err_report' ERR
-cd ${PTF_DIR}
+cd "${PTF_DIR}"
 
 echo "************************************************"
 echo "STARTING PTF TESTS..."

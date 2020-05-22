@@ -23,37 +23,34 @@ stratumRunName=stratum-bmv2-${radomNumber}
 testerImageName=${PTFTEST_IMAGE:-onosproject/fabric-p4test:latest}
 testerRunName=fabric-p4test-${radomNumber}
 
+exitValTest=1
+
 function ctrl_c() {
-        echo " Stopping ${testerRunName}..."
-        docker stop -t0 ${testerRunName}
-        docker rm ${testerRunName}
-        echo " Stopping ${stratumRunName}..."
-        docker stop -t0 ${stratumRunName}
+        echo "*** Stopping ${testerRunName}..."
+        docker stop -t0 ${testerRunName} > /dev/null
+        exitValTest=$(docker inspect ${testerRunName} --format='{{.State.ExitCode}}')
+        docker rm ${testerRunName} > /dev/null
+
+        echo "*** Stopping ${stratumRunName}..."
+        docker stop -t0 ${stratumRunName} > /dev/null
+        exit "${exitValTest}"
 }
-trap ctrl_c INT
+trap ctrl_c EXIT
 
 # Run stratum-bmv2
-echo " Starting ${stratumRunName}..."
+echo "*** Starting ${stratumRunName}..."
 docker run --name ${stratumRunName} -d --privileged --rm \
-    --entrypoint "/fabric-p4test/travis/run_stratum_bmv2.sh" \
-    -v ${DIR}:/fabric-p4test \
+    --entrypoint "/fabric-p4test/run/bmv2/start_stratum_bmv2.sh" \
+    -v "${DIR}":/fabric-p4test \
     ${stratumImageName}
 sleep 2
 
 # Run and show log (also stored in run.log)
-echo " Starting ${testerRunName}..."
+echo "*** Starting ${testerRunName}..."
 docker run --name ${testerRunName} -d --privileged \
     --network "container:${stratumRunName}" \
-    -v ${DIR}:/fabric-p4test \
-    -v ${ONOS_ROOT}:/onos \
-    ${testerImageName} \
-    bash /fabric-p4test/travis/run_test.sh /onos ${@}
-docker logs -f ${testerRunName} | tee ${DIR}/run.log
-
-exitValTest=$(docker inspect ${testerRunName} --format='{{.State.ExitCode}}')
-docker rm ${testerRunName}
-
-echo " Stopping ${stratumRunName}..."
-docker stop -t0 ${stratumRunName}
-
-exit ${exitValTest}
+    -v "${DIR}":/fabric-p4test \
+    -v "${ONOS_ROOT}":/onos \
+    "${testerImageName}" \
+    bash /fabric-p4test/run/bmv2/run_test.sh /onos ${@}
+docker logs -f ${testerRunName} | tee "${DIR}"/run.log
