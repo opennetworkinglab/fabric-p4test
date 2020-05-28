@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+
+set -e
+
+BF_SDE_IMG="opennetworking/bf-sde:9.0.0"
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" > /dev/null 2>&1 && pwd)"
+ROOT_DIR=${DIR}/../..
+
+if [[ -z "${FABRIC_TOFINO}" ]]; then
+    echo "ERROR: FABRIC_TOFINO env not defined"
+    exit 1
+fi
+
+FABRIC_PROFILE=$1
+if [ "${FABRIC_PROFILE}" = "all" ]; then
+  echo "'all' profile is not supported"
+  exit 1
+fi
+
+SDE_VER=$(docker run --rm ${BF_SDE_IMG} tofino-model --version | cut -d' ' -f2 | cut -d '-' -f1 | tr . _)
+
+echo "SDE_VER=${SDE_VER}"
+randomNum=${RANDOM}
+
+# Images and Docker names
+# Tofino Model
+tofinoModelImageName=${BF_SDE_IMG}
+tofinoModelRunName=tofino-model-${randomNum}
+
+# Stratum BF
+stratumBfImageName=stratumproject/stratum-bf:$(echo ${SDE_VER} | tr _ .)
+stratumBfRunName=stratum-bf-${randomNum}
+
+# PTF Tester
+# TODO: depend on a simple tester image (this image contains also BMv2)
+testerImageName=${PTFTEST_IMAGE:-onosproject/fabric-p4test:latest}
+testerRunName=fabric-p4test-${randomNum}
+
+function stop() {
+    set +e
+    echo "*** Stopping ${stratumBfRunName}..."
+    docker stop -t0 ${stratumBfRunName}
+    echo "*** Stopping ${tofinoModelRunName}..."
+    docker stop -t0 ${tofinoModelRunName}
+    echo "*** Stopping ${testerRunName}..."
+    docker stop -t0 ${testerRunName}
+}
+trap stop EXIT
+
+# Run Tofino Model
+echo "*** Starting ${tofinoModelRunName}..."
+docker run --name ${tofinoModelRunName} -d -t --privileged --rm \
+    -e FABRIC_PROFILE=${FABRIC_PROFILE} \
+    -e SDE_VER=${SDE_VER} \
+    -v ${FABRIC_TOFINO}:/fabric-tofino \
+    -e FABRIC_TOFINO=/fabric-tofino \
+    -v ${ROOT_DIR}:/fabric-p4test \
+    --entrypoint /fabric-p4test/run/tm/tm_entrypoint.sh \
+    ${tofinoModelImageName}
+sleep 5
+
+# Run Stratum BF
+echo "*** Starting ${stratumBfRunName}..."
+docker run --name ${stratumBfRunName} -d --privileged --rm \
+    --network "container:${tofinoModelRunName}" \
+    -v ${ROOT_DIR}:/fabric-p4test \
+    --entrypoint /fabric-p4test/run/tm/stratum_entrypoint.sh \
+    ${stratumBfImageName}
+sleep 30
+
+# Run and show log (also stored in log/run.log)
+echo "*** Starting ${testerRunName}..."
+docker run --name ${testerRunName} -d --privileged --rm \
+    --network "container:${tofinoModelRunName}" \
+    -v "${ROOT_DIR}":/fabric-p4test \
+    -v "${FABRIC_TOFINO}":/fabric-tofino -e FABRIC_TOFINO=/fabric-tofino \
+    -e SDE_VER="${SDE_VER}" \
+    "${testerImageName}" \
+    bash /fabric-p4test/run/tm/start_test.sh ${@}
+docker logs -f ${testerRunName} | tee ${DIR}/log/run.log
+
+stop

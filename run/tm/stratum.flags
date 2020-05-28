@@ -1,0 +1,11 @@
+-bf_sde_install=/usr
+-bf_switchd_cfg=/usr/share/stratum/tofino_skip_p4_no_bsp.conf
+-chassis_config_file=/fabric-p4test/run/tm/chassis_config.pb.txt
+-external_stratum_urls=0.0.0.0:28000
+-forwarding_pipeline_configs_file=/dev/null
+-grpc_max_recv_msg_size=256
+-log_dir=/fabric-p4test/run/tm/log
+-logtostderr=true
+-persistent_config_dir=/tmp
+-phal_config_path=/usr/share/stratum/phal_config.pb.txt
+-write_req_log_file=/fabric-p4test/run/tm/log/p4rt-write-reqs.txt

@@ -38,3 +38,8 @@ for idx in 0 1 2 3 4 5 6 7 8; do
         sysctl net.ipv6.conf.${intf1}.disable_ipv6=1
     fi
 done
+
+# Clean write-reqs.txt
+echo "" > /fabric-p4test/run/bmv2/log/write-reqs.txt
+
+stratum_bmv2 -flagfile=/fabric-p4test/run/bmv2/stratum.flags &> /fabric-p4test/run/bmv2/log/switch.log
