@@ -12,7 +12,9 @@ fi
 radomNumber=${RANDOM}
 
 # Stratum BMv2
-stratumImageName=opennetworking/mn-stratum:latest
+# Use image sha to pin a specific stratum_bmv2 build and have reproducible runs.
+# TODO: instrument CI to test on both a stable version and the latest one
+stratumImageName=opennetworking/mn-stratum:latest@sha256:1bba2e2c06460c73b0133ae22829937786217e5f20f8f80fcc3063dcf6707ebe
 stratumRunName=stratum-bmv2-${radomNumber}
 
 # PTF Tester
