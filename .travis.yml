@@ -12,7 +12,7 @@ env:
   global:
     - ONOS_BRANCH=master
     - PROFILES=all
-    - PTFTEST_IMAGE=fp4test
+    - FP4TEST_DOCKER_IMG=fp4test
     - ONOS_ROOT=/tmp/onos
 
 install:

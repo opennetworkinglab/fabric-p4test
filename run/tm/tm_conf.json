@@ -16,9 +16,9 @@
                     "p4_pipelines": [
                         {
                             "p4_pipeline_name": "pipe",
-                            "path": "%DIR%",
-                            "config": "%DIR%/pipe/tofino.bin",
-                            "context": "%DIR%/pipe/context.json",
+                            "path": "/tmp/p4c-out",
+                            "config": "/tmp/p4c-out/pipe/tofino.bin",
+                            "context": "/tmp/p4c-out/pipe/context.json",
                             "pipe_scope": [
                                 0,
                                 1,
@@ -27,8 +27,8 @@
                             ]
                         }
                     ],
-                    "bfrt-config": "bf-rt.json",
-                    "program-name": "%FABRIC_PROFILE%"
+                    "bfrt-config": "/tmp/p4c-out/bf-rt.json",
+                    "program-name": "%PROG_NAME%"
                 }
             ]
         }

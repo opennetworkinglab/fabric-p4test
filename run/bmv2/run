@@ -45,7 +45,7 @@ sleep 2
 
 # tester
 # Run and show log (also stored in log/run.log)
-testerImageName=${PTFTEST_IMAGE:-onosproject/fabric-p4test:latest}
+testerImageName=${FP4TEST_DOCKER_IMG:-onosproject/fabric-p4test:latest}
 testerRunName=fabric-p4test-${rnd}
 echo "*** Starting ${testerRunName}..."
 docker run --name ${testerRunName} -d --privileged \

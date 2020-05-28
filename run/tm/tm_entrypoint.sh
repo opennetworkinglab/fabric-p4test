@@ -13,35 +13,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+set -ex
 
-# Generate target-tofino.conf
-PLATF=${1:-mavericks}
-
-if [ -z "${FABRIC_PROFILE}" ]; then
-  echo "FABRIC_PROFILE is not set"
-  exit 1
-fi
-if [ "${FABRIC_PROFILE}" = "all" ]; then
-  echo "'all' profile is not supported"
-  exit 1
-fi
-
-if [ -z "${SDE_VER}" ]; then
-  echo "SDE_VER is not set"
-  exit 1
-fi
-
-if [ -z "${FABRIC_TOFINO}" ]; then
-  echo "FABRIC_TOFINO is not set"
-  exit 1
-fi
-
-BASE_PATH=${FABRIC_TOFINO}/src/main/resources/p4c-out/${FABRIC_PROFILE}/tofino/${PLATF}_sde_${SDE_VER}
-
-# Create P4 Target configuration from template
-sed -e "s;%DIR%;${BASE_PATH};g" -e "s;%FABRIC_PROFILE%;${FABRIC_PROFILE};g" "${DIR}"/target_conf_template.conf > /tmp/target-tofino.conf
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" > /dev/null 2>&1 && pwd)"
 
 veth_setup.sh
 dma_setup.sh
-tofino-model --p4-target-config /tmp/target-tofino.conf &> "${DIR}"/log/tm.log
+
+# Copy files outside of shared volume to improve container disk I/O performance
+cp -r /p4c-out /tmp
+ls /tmp
+
+mkdir /tmp/run
+
+# Change workdir to a non-shared volume to improve container disk I/O
+# performance, as tofino-model performs a lot of log writes for each packet
+cd /tmp/run && tofino-model --p4-target-config "${DIR}"/tm_conf.json
