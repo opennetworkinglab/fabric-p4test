@@ -362,7 +362,7 @@ class FabricIPv4UnicastGroupTestAllPortIpDst(FabricTest):
         # to be forwarded for each port
         ipdst_toport = [None, None]
         for i in range(50):
-            # If we increment test_ipdst by 1 on tofino, all 50 packets hash to
+            # If we increment test_ipdst by 1 on hardware, all 50 packets hash to
             # the same ECMP group member and the test fails. Changing the increment
             # to 3 makes this not happen. This seems extremely unlikely and needs
             # further testing to confirm. A similar situation seems to be happening
