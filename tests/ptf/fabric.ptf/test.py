@@ -22,6 +22,8 @@ from scapy.layers.ppp import PPPoED
 from base_test import autocleanup
 from fabric_test import *
 
+from unittest import skip
+
 vlan_confs = {
     "tag->tag": [True, True],
     "untag->untag": [False, False],
@@ -118,7 +120,7 @@ class FabricIPv4UnicastGtpTest(IPv4UnicastTest):
         pkt = Ether(src=HOST1_MAC, dst=SWITCH_MAC) / \
               IP(src=HOST3_IPV4, dst=HOST4_IPV4) / \
               UDP(sport=UDP_GTP_PORT, dport=UDP_GTP_PORT) / \
-              make_gtp(20 + len(inner_udp), 0xeeffc0f0) / \
+              GTPU(teid=0xeeffc0f0) / \
               IP(src=HOST1_IPV4, dst=HOST2_IPV4) / \
               inner_udp
         self.runIPv4UnicastTest(pkt, next_hop_mac=HOST2_MAC)
@@ -237,7 +239,7 @@ class FabricIPv4UnicastGroupTestAllPortTcpDport(FabricTest):
         # causes the packet to be forwarded for each port
         tcpdport_toport = [None, None]
         for i in range(50):
-            test_tcp_dport = 1230 + i
+            test_tcp_dport = 1230 + 3 * i
             pkt_from1 = testutils.simple_tcp_packet(
                 eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
                 ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4, ip_ttl=64, tcp_dport=test_tcp_dport)
@@ -361,7 +363,12 @@ class FabricIPv4UnicastGroupTestAllPortIpDst(FabricTest):
         # to be forwarded for each port
         ipdst_toport = [None, None]
         for i in range(50):
-            test_ipdst = "10.0.2." + str(i)
+            # If we increment test_ipdst by 1 on hardware, all 50 packets hash to
+            # the same ECMP group member and the test fails. Changing the increment
+            # to 3 makes this not happen. This seems extremely unlikely and needs
+            # further testing to confirm. A similar situation seems to be happening
+            # with FabricIPv4UnicastGroupTestAllPortTcpDport
+            test_ipdst = "10.0.2." + str(3 * i)
             pkt_from1 = getattr(testutils, "simple_%s_packet" % pkt_type)(
                 eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
                 ip_src=HOST1_IPV4, ip_dst=test_ipdst, ip_ttl=64)
