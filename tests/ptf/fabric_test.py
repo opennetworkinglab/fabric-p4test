@@ -130,6 +130,7 @@ PPPOED_CODES = (
     PPPOED_CODE_PADT,
 )
 
+
 class GTPU(Packet):
     name = "GTP-U Header"
     fields_desc = [
@@ -143,6 +144,7 @@ class GTPU(Packet):
         ShortField("length", None),
         IntField("teid", 0)
     ]
+
     def post_build(self, pkt, payload):
         pkt += payload
         # Set the length field if it is unset
@@ -150,10 +152,11 @@ class GTPU(Packet):
             length = len(pkt) - 8
             pkt = pkt[:2] + struct.pack("!H", length) + pkt[4:]
         return pkt
+
+
 # Register our GTPU header with scapy for dissection
 bind_layers(UDP, GTPU, dport=UDP_GTP_PORT)
 bind_layers(GTPU, IP)
-
 
 
 def pkt_mac_swap(pkt):
@@ -1129,16 +1132,15 @@ class SpgwSimpleTest(IPv4UnicastTest):
             ]
         )
 
-
     def add_flexible_pdr(self, ctr_id, far_id,
-                s1u_sgw_addr=None, s1u_sgw_addr_mask=None,
-                teid=None, teid_mask=None,
-                src_addr=None, src_addr_mask=None,
-                dst_addr=None, dst_addr_mask=None,
-                ip_proto=None, ip_proto_mask=None,
-                l4_sport=None, l4_sport_mask=None,
-                l4_dport=None, l4_dport_mask=None,
-                uplink=False, downlink=False,):
+                         s1u_sgw_addr=None, s1u_sgw_addr_mask=None,
+                         teid=None, teid_mask=None,
+                         src_addr=None, src_addr_mask=None,
+                         dst_addr=None, dst_addr_mask=None,
+                         ip_proto=None, ip_proto_mask=None,
+                         l4_sport=None, l4_sport_mask=None,
+                         l4_dport=None, l4_dport_mask=None,
+                         uplink=False, downlink=False,):
 
         raise Exception("Flexible PDR insertion not yet implemented")
         assert(downlink or uplink)
@@ -1149,19 +1151,17 @@ class SpgwSimpleTest(IPv4UnicastTest):
         action_args = [("ctr_id", stringify(ctr_id, 4)),
                         ("far_id", stringify(far_id, 4))]
 
-        ALL_ONES_32 = stringify((1<<32) - 1, 4)
-        ALL_ONES_16 = stringify((1<<16) - 1, 2)
-        ALL_ONES_8  = stringify((1<< 8) - 1, 1)
+        ALL_ONES_32 = stringify((1 << 32) - 1, 4)
+        ALL_ONES_16 = stringify((1 << 16) - 1, 2)
+        ALL_ONES_8 = stringify((1 << 8) - 1, 1)
 
         match_keys = []
         if src_addr:
             match_keys.append(self.Ternary("ipv4_src", ipv4_to_binary(src_addr), ))
 
-
     def setup_uplink(self, s1u_sgw_addr, teid, ue_addr, ctr_id, far_id=None):
-
         if far_id is None:
-            far_id = 23 # 23 is the most random number less than 100
+            far_id = 23  # 23 is the most random number less than 100
 
         self.add_s1u_iface(s1u_sgw_addr)
         self.add_uplink_pdr(
@@ -1172,10 +1172,9 @@ class SpgwSimpleTest(IPv4UnicastTest):
             tunnel_dst_addr=s1u_sgw_addr)
         self.add_normal_far(far_id=far_id)
 
-
     def setup_downlink(self, s1u_sgw_addr, s1u_enb_addr, teid, ue_addr, ctr_id, far_id=None):
         if far_id is None:
-            far_id = 24 # the second most random  number
+            far_id = 24  # the second most random  number
 
         self.add_ue_pool(ip_prefix=ue_addr, prefix_len=32)
         self.add_downlink_pdr(ctr_id=ctr_id, far_id=far_id, ue_addr=ue_addr)
@@ -1185,9 +1184,7 @@ class SpgwSimpleTest(IPv4UnicastTest):
             tunnel_src_addr=s1u_sgw_addr,
             tunnel_dst_addr=s1u_enb_addr)
 
-
     def runUplinkTest(self, ue_out_pkt, tagged1, tagged2, mpls):
-
         ctr_id = 1
         dst_mac = HOST2_MAC
 
@@ -1203,13 +1200,12 @@ class SpgwSimpleTest(IPv4UnicastTest):
         if tagged2:
             exp_pkt = pkt_add_vlan(exp_pkt, VLAN_ID_2)
 
-        # def setup_uplink(self, s1u_sgw_addr, teid, ue_addr, ctr_id, far_id=None):
         self.setup_uplink(
-            s1u_sgw_addr = S1U_SGW_IPV4,
-            teid = TEID_1,
-            ue_addr = ue_out_pkt[IP].src,
-            ctr_id = ctr_id
-           )
+            s1u_sgw_addr=S1U_SGW_IPV4,
+            teid=TEID_1,
+            ue_addr=ue_out_pkt[IP].src,
+            ctr_id=ctr_id
+        )
 
         ingress_pdr_pkt_ctr1 = self.read_pkt_count("spgw_ingress.pdr_counter", ctr_id)
 
@@ -1223,7 +1219,6 @@ class SpgwSimpleTest(IPv4UnicastTest):
         ctr_increase = ingress_pdr_pkt_ctr2 - ingress_pdr_pkt_ctr1
         if ctr_increase != 1:
             self.fail("PDR packet counter incremented by %d instead of 1!" % ctr_increase)
-
 
     def runDownlinkTest(self, pkt, tagged1, tagged2, mpls):
 
@@ -1245,11 +1240,11 @@ class SpgwSimpleTest(IPv4UnicastTest):
             exp_pkt = pkt_add_vlan(exp_pkt, VLAN_ID_2)
 
         self.setup_downlink(
-            s1u_sgw_addr = S1U_SGW_IPV4,
-            s1u_enb_addr = S1U_ENB_IPV4,
-            teid = TEID_1,
-            ue_addr = ue_ipv4,
-            ctr_id = ctr_id,
+            s1u_sgw_addr=S1U_SGW_IPV4,
+            s1u_enb_addr=S1U_ENB_IPV4,
+            teid=TEID_1,
+            ue_addr=ue_ipv4,
+            ctr_id=ctr_id,
         )
 
         ingress_pdr_pkt_ctr1 = self.read_pkt_count("spgw_ingress.pdr_counter", ctr_id)
@@ -1264,9 +1259,6 @@ class SpgwSimpleTest(IPv4UnicastTest):
         ctr_increase = ingress_pdr_pkt_ctr2 - ingress_pdr_pkt_ctr1
         if ctr_increase != 1:
             self.fail("PDR packet counter incremented by %d instead of 1!" % ctr_increase)
-
-
-
 
 
 class IntTest(IPv4UnicastTest):

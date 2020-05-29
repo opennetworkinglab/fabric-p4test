@@ -239,7 +239,7 @@ class FabricIPv4UnicastGroupTestAllPortTcpDport(FabricTest):
         # causes the packet to be forwarded for each port
         tcpdport_toport = [None, None]
         for i in range(50):
-            test_tcp_dport = 1230 + 3*i
+            test_tcp_dport = 1230 + 3 * i
             pkt_from1 = testutils.simple_tcp_packet(
                 eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
                 ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4, ip_ttl=64, tcp_dport=test_tcp_dport)
@@ -339,6 +339,7 @@ class FabricIPv4UnicastGroupTestAllPortIpSrc(FabricTest):
         self.IPv4UnicastGroupTestAllPortL4SrcIp("tcp")
         self.IPv4UnicastGroupTestAllPortL4SrcIp("udp")
 
+
 class FabricIPv4UnicastGroupTestAllPortIpDst(FabricTest):
     @autocleanup
     def IPv4UnicastGroupTestAllPortL4DstIp(self, pkt_type):
@@ -367,7 +368,7 @@ class FabricIPv4UnicastGroupTestAllPortIpDst(FabricTest):
             # to 3 makes this not happen. This seems extremely unlikely and needs
             # further testing to confirm. A similar situation seems to be happening
             # with FabricIPv4UnicastGroupTestAllPortTcpDport
-            test_ipdst = "10.0.2." + str(3*i)
+            test_ipdst = "10.0.2." + str(3 * i)
             pkt_from1 = getattr(testutils, "simple_%s_packet" % pkt_type)(
                 eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
                 ip_src=HOST1_IPV4, ip_dst=test_ipdst, ip_ttl=64)
