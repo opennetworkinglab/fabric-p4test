@@ -48,26 +48,31 @@ fi
 
 fabricProfile=$1
 if [ -z "${fabricProfile}" ]; then
-  echo "fabric profile is not set"
-  exit 1
+    echo "fabric profile is not set"
+    exit 1
 fi
 
 if [ "${fabricProfile}" = "all" ]; then
-  echo "Testing 'all' profiles is not supported on tofino-model"
-  exit 1
+    echo "Testing 'all' profiles is not supported on tofino-model"
+    exit 1
 fi
 echo "*** Testing profile '${fabricProfile}'..."
 
 detectedSdeVer=$(docker run --rm "${SDE_DOCKER_IMG}" tofino-model --version | cut -d' ' -f2 | cut -d '-' -f1)
 echo "*** Detected BF SDE version ${detectedSdeVer} (tofino-model), required ${SDE_VERSION}..."
 if [ "${detectedSdeVer}" != "${SDE_VERSION}" ]; then
-  echo "ERROR: SDE versions mismatch"
-  exit 1
+    echo "ERROR: SDE version mismatch"
+    exit 1
 fi
 
-# Replace dots with underscores
-sdeVer_=$(echo "${SDE_VERSION}" | tr . _)
-P4C_OUT=${FABRIC_TOFINO}/src/main/resources/p4c-out/${fabricProfile}/tofino/montara_sde_${sdeVer_}
+# Find Tofino compiled artifacts
+sdeVer_=$(echo "${SDE_VERSION}" | tr . _) # Replace dots with underscores
+P4C_OUT=${FABRIC_TOFINO}/src/main/resources/p4c-out/${fabricProfile}/tofino/mavericks_sde_${sdeVer_}
+echo "*** Using compiled artifacts in ${P4C_OUT}..."
+if [ ! -f "${P4C_OUT}"/pipe/tofino.bin ]; then
+    echo "ERROR: missing tofino.bin in ${P4C_OUT}"
+    exit 1
+fi
 
 # Fix a name for each container so we can stop them
 randomNum=${RANDOM}
@@ -79,23 +84,27 @@ function stop() {
     set +e
     echo "*** Stopping ${stratumBfRunName}..."
     docker stop -t0 ${stratumBfRunName} > /dev/null 2>&1
-    docker cp ${stratumBfRunName}:/tmp/run "${DIR}"/log/stratum-bf > /dev/null 2>&1
+    docker cp ${stratumBfRunName}:/tmp/workdir "${DIR}"/log/stratum-bf > /dev/null 2>&1
     docker rm ${stratumBfRunName} > /dev/null 2>&1
 
     echo "*** Stopping ${tmRunName}..."
     docker stop -t0 ${tmRunName} > /dev/null 2>&1
-    docker cp ${tmRunName}:/tmp/run "${DIR}"/log/tofino-model > /dev/null 2>&1
+    docker cp ${tmRunName}:/tmp/workdir "${DIR}"/log/tofino-model > /dev/null 2>&1
     docker rm ${tmRunName} > /dev/null 2>&1
 
     echo "*** Stopping ${testerRunName}..."
-    docker stop -t0 ${testerRunName} > /dev/null 2>&1
-
-    exitValTest=$(docker inspect "${testerRunName}" --format='{{.State.ExitCode}}' > /dev/null 2>&1)
-    if [ -z "${exitValTest}" ]; then
-      exit 1
+    if docker container ls | grep -q "${testerRunName}"; then
+        docker stop -t0 ${testerRunName}
+        #FIXME: non-zero exit code even on successful tests
+        docker inspect "${testerRunName}" --format='{{.State.ExitCode}}'
+        testExitCode=$(docker inspect "${testerRunName}" --format='{{.State.ExitCode}}')
+        echo ${testExitCode}
+        docker rm ${testerRunName}
+    else
+        testExitCode=1
     fi
 
-    exit "${exitValTest}"
+    exit "${testExitCode}"
 }
 trap stop EXIT
 
@@ -128,10 +137,11 @@ sleep 5
 wait_for ${stratumBfRunName} 28000 60
 
 echo "*** Starting ${testerRunName}..."
-docker run --name ${testerRunName} -d --privileged --rm \
+docker run --name ${testerRunName} -d --privileged \
     --network "container:${tmRunName}" \
     -v "${FP4TEST_ROOT}":/fabric-p4test \
     -v "${P4C_OUT}":/p4c-out \
+    --entrypoint /fabric-p4test/run/tm/start_test.sh \
     "${FP4TEST_DOCKER_IMG}" \
-    bash /fabric-p4test/run/tm/start_test.sh ${@}
+    ${@}
 docker logs -f ${testerRunName} | tee "${DIR}"/log/run.log

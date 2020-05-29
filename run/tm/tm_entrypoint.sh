@@ -20,12 +20,10 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" > /dev/null 2>&1 && pwd)"
 veth_setup.sh
 dma_setup.sh
 
-# Copy files outside of shared volume to improve container disk I/O performance
-cp -r /p4c-out /tmp
-ls /tmp
-
-mkdir /tmp/run
-
 # Change workdir to a non-shared volume to improve container disk I/O
-# performance, as tofino-model performs a lot of log writes for each packet
-cd /tmp/run && tofino-model --p4-target-config "${DIR}"/tm_conf.json
+# performance, as tofino-model writes a lot of logs for each packet.
+# Log files will be copied out of this container at the end of the test
+# execution.
+mkdir /tmp/workdir
+cd /tmp/workdir
+tofino-model --p4-target-config "${DIR}"/tm_conf.json
