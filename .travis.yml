@@ -10,7 +10,7 @@ python:
 
 env:
   global:
-    - ONOS_BRANCH=master
+    - ONOS_BRANCH=onos-2.2
     - PROFILES=all
     - FP4TEST_DOCKER_IMG=fp4test
     - ONOS_ROOT=/tmp/onos
