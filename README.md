@@ -85,6 +85,8 @@ is used by the test cases to populate tables and other P4 objects.
 
 ## Steps to run tests on tofino-model with stratum_bf
 
+### Requirements
+
 Steps are similar to the previous case with a few differences:
 
 * You will need to compile fabric.p4 for Tofino;
@@ -101,6 +103,12 @@ The run script will use `docker run` to invoke the `tofino-model` command inside
 the container. For this reason, the script expects a Docker image that has the
 whole Barefoot SDE installed in it or just the `tofino-model` package. In both
 cases, the `tofino-model` executable should be on `PATH`.
+
+**IMPORTANT: make sure to reserve at least 8GB of RAM** for your Docker host
+system (or VM if running Docker Desktop for Mac), otherwise `tofino-model` might
+fail to start or affect test results negatively.
+
+### Steps
 
 1. Clone `fabric-tofino` repo and follow instructions to compile fabric.p4 for
    Tofino:

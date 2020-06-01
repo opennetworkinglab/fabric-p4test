@@ -9,6 +9,8 @@ define run_tests
 		$(2)
 endef
 
+.DEFAULT_GOAL := all
+
 _checkenv:
 ifndef ONOS_ROOT
 	$(error ONOS_ROOT env not defined)
