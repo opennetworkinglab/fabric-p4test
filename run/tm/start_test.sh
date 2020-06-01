@@ -15,17 +15,11 @@
 
 set -e
 
-DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" > /dev/null 2>&1 && pwd)"
 FP4TEST_DIR=${DIR}/../../
 PTF_DIR=${FP4TEST_DIR}/tests/ptf
 
 err_report() {
-    echo
-    echo "************************************************"
-    echo "PTF LOG"
-    echo "************************************************"
-    cat "${PTF_DIR}"/ptf.log
-
     echo "************************************************"
     echo "SOME PTF TESTS FAILED :("
     echo "************************************************"
@@ -39,9 +33,8 @@ echo "************************************************"
 echo "STARTING PTF TESTS..."
 echo "************************************************"
 
-make -f "${DIR}"/Makefile ${@} 2>&1
+make -f "${DIR}"/Makefile ${@}
 
 echo "************************************************"
 echo "ALL PTF TESTS PASSED :)"
 echo "************************************************"
-

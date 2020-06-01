@@ -15,20 +15,16 @@ if [[ -z "${ONOS_ROOT}" ]]; then
     exit 1
 fi
 
-rnd=${RANDOM}
+# Clean up old logs (if any)
+rm -rf "${DIR}"/log
+mkdir "${DIR}"/log
 
-exitValTest=1
+rnd=${RANDOM}
 
 function stop() {
     set +e
-    echo "*** Stopping ${testerRunName}..."
-    docker stop -t0 "${testerRunName}" > /dev/null
-    exitValTest=$(docker inspect "${testerRunName}" --format='{{.State.ExitCode}}')
-    docker rm "${testerRunName}" > /dev/null
-
     echo "*** Stopping ${dutRunName}..."
     docker stop -t0 "${dutRunName}" > /dev/null
-    exit "${exitValTest}"
 }
 trap stop EXIT
 
@@ -37,21 +33,20 @@ dutImageName=${MN_STRATUM_IMG}
 dutRunName=stratum-bmv2-${rnd}
 
 echo "*** Starting ${dutRunName}..."
-docker run --name ${dutRunName} -d -t --privileged --rm \
+docker run --name ${dutRunName} -d -it --privileged --rm \
     --entrypoint "/fabric-p4test/run/bmv2/stratum_entrypoint.sh" \
     -v "${ROOT_DIR}":/fabric-p4test \
     ${dutImageName}
 sleep 2
 
 # tester
-# Run and show log (also stored in log/run.log)
+# Run and show log
 testerImageName=${FP4TEST_DOCKER_IMG:-onosproject/fabric-p4test:latest}
 testerRunName=fabric-p4test-${rnd}
 echo "*** Starting ${testerRunName}..."
-docker run --name ${testerRunName} -d --privileged \
+docker run --name ${testerRunName} -it --privileged --rm \
     --network "container:${dutRunName}" \
     -v "${ROOT_DIR}":/fabric-p4test \
     -v "${ONOS_ROOT}":/onos -e ONOS_ROOT=/onos \
     "${testerImageName}" \
     bash /fabric-p4test/run/bmv2/start_test.sh "${FABRIC_PROFILE}" ${@}
-docker logs -f ${testerRunName} | tee ./log/run.log

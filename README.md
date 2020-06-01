@@ -77,6 +77,12 @@ is used by the test cases to populate tables and other P4 objects.
     ./run/bmv2/run fabric TEST=test.FabricBridgingTest
     ```
 
+4. If tests fail, check logs in:
+
+   * `run/bmv2/log` for stratum_bmv2 logs
+   * `tests/ptf/` for PTF-related logs and PCAP traces (`ptf.log` and
+     `ptf.pcap`)
+
 ## Steps to run tests on tofino-model with stratum_bf
 
 Steps are similar to the previous case with a few differences:
@@ -140,6 +146,12 @@ cases, the `tofino-model` executable should be on `PATH`.
     ```
     ./run/tm/run fabric-spgw TEST=test.FabricBridgingTest
     ```
+
+5. If tests fail, check logs in:
+
+   * `run/tm/log` for `tofino-model` and `stratum_bf` logs
+   * `tests/ptf/` for PTF-related logs and PCAP traces (`ptf.log` and
+     `ptf.pcap`)
 
 ## Run tests on other targets
 

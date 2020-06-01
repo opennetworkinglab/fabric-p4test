@@ -91,20 +91,6 @@ function stop() {
     docker stop -t0 ${tmRunName} > /dev/null 2>&1
     docker cp ${tmRunName}:/tmp/workdir "${DIR}"/log/tofino-model > /dev/null 2>&1
     docker rm ${tmRunName} > /dev/null 2>&1
-
-    echo "*** Stopping ${testerRunName}..."
-    if docker container ls | grep -q "${testerRunName}"; then
-        docker stop -t0 ${testerRunName}
-        #FIXME: non-zero exit code even on successful tests
-        docker inspect "${testerRunName}" --format='{{.State.ExitCode}}'
-        testExitCode=$(docker inspect "${testerRunName}" --format='{{.State.ExitCode}}')
-        echo ${testExitCode}
-        docker rm ${testerRunName}
-    else
-        testExitCode=1
-    fi
-
-    exit "${testExitCode}"
 }
 trap stop EXIT
 
@@ -137,11 +123,10 @@ sleep 5
 wait_for ${stratumBfRunName} 28000 60
 
 echo "*** Starting ${testerRunName}..."
-docker run --name ${testerRunName} -d --privileged \
+docker run --name ${testerRunName} -it --privileged --rm \
     --network "container:${tmRunName}" \
     -v "${FP4TEST_ROOT}":/fabric-p4test \
     -v "${P4C_OUT}":/p4c-out \
     --entrypoint /fabric-p4test/run/tm/start_test.sh \
     "${FP4TEST_DOCKER_IMG}" \
     ${@}
-docker logs -f ${testerRunName} | tee "${DIR}"/log/run.log

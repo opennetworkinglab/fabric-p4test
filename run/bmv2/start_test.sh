@@ -7,16 +7,20 @@ FP4TEST_DIR=${DIR}/../../
 PTF_DIR=${FP4TEST_DIR}/tests/ptf
 
 err_report() {
-    echo
-    echo "************************************************"
-    echo "STRATUM-BMV2 LOG"
-    echo "************************************************"
-    cat "${DIR}"/log/stratum_bmv2.log
-    echo
-    echo "************************************************"
-    echo "PTF LOG"
-    echo "************************************************"
-    cat "${PTF_DIR}"/ptf.log
+    if [ "${TRAVIS}" = "true" ]; then
+        # Dump all relevant logs to stdout to debug failing tests directly on
+        # Travis CI
+        echo
+        echo "************************************************"
+        echo "STRATUM-BMV2 LOG"
+        echo "************************************************"
+        cat "${DIR}"/log/stratum_bmv2.log
+        echo
+        echo "************************************************"
+        echo "PTF LOG"
+        echo "************************************************"
+        cat "${PTF_DIR}"/ptf.log
+    fi
 
     echo "************************************************"
     echo "SOME PTF TESTS FAILED :("
@@ -31,7 +35,7 @@ echo "************************************************"
 echo "STARTING PTF TESTS..."
 echo "************************************************"
 
-make -f "${DIR}"/Makefile ${@} 2>&1
+make -f "${DIR}"/Makefile ${@}
 
 echo "************************************************"
 echo "ALL PTF TESTS PASSED :)"

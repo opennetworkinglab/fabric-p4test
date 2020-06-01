@@ -15,14 +15,14 @@
 
 set -ex
 
-DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" > /dev/null 2>&1 && pwd)"
 
 # From:
 # https://github.com/p4lang/behavioral-model/blob/master/tools/veth_setup.sh
 
 for idx in 0 1 2 3 4 5 6 7 8; do
-    intf0="veth$(($idx*2))"
-    intf1="veth$(($idx*2+1))"
+    intf0="veth$(($idx * 2))"
+    intf1="veth$(($idx * 2 + 1))"
     if ! ip link show $intf0 &> /dev/null; then
         ip link add name $intf0 type veth peer name $intf1
         ip link set dev $intf0 up
@@ -54,9 +54,17 @@ for idx in 0 1 2 3 4 5 6 7 8; do
     fi
 done
 
-cd "${DIR}"
-
-# Clean write-reqs.txt
-echo "" > ./log/write-reqs.txt
-
-stratum_bmv2 -flagfile=./stratum.flags &> ./log/switch.log
+stratum_bmv2 \
+    -bmv2_log_level=trace \
+    -chassis_config_file="${DIR}"/chassis_config.txt \
+    -cpu_port=255 \
+    -device_id=1 \
+    -external-stratum-urls=0.0.0.0:28000 \
+    -forwarding_pipeline_configs_file=/dev/null \
+    -initial_pipeline=/root/dummy.json \
+    -local_stratum_url=localhost:28000 \
+    -log_dir="${DIR}"/log/ \
+    -logtostderr=true \
+    -persistent_config_dir=/tmp/ \
+    -write_req_log_file="${DIR}"/log/p4rt-write-reqs.log \
+    &> "${DIR}"/log/stratum_bmv2.log
