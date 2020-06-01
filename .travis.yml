@@ -12,7 +12,7 @@ env:
   global:
     - ONOS_BRANCH=onos-2.2
     - PROFILES=all
-    - PTFTEST_IMAGE=fp4test
+    - FP4TEST_DOCKER_IMG=fp4test
     - ONOS_ROOT=/tmp/onos
 
 install:
@@ -21,10 +21,10 @@ install:
 jobs:
   include:
     - stage: ptf
-      name: "PTF tests"
+      name: "Run PTF tests on stratum_bmv2"
       script:
         - git clone --depth 1 https://github.com/opennetworkinglab/onos /tmp/onos -b $ONOS_BRANCH
-        - ./docker_run.sh $PROFILES
+        - ./run/bmv2/run $PROFILES
     - stage: checkstyle
       name: "Checkstyle"
       install: skip
