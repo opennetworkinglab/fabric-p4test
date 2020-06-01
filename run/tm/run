@@ -68,7 +68,7 @@ fi
 # Find Tofino compiled artifacts
 sdeVer_=$(echo "${SDE_VERSION}" | tr . _) # Replace dots with underscores
 P4C_OUT=${FABRIC_TOFINO}/src/main/resources/p4c-out/${fabricProfile}/tofino/mavericks_sde_${sdeVer_}
-echo "*** Using compiled artifacts in ${P4C_OUT}..."
+echo "*** Using P4 compiler output in ${P4C_OUT}..."
 if [ ! -f "${P4C_OUT}"/pipe/tofino.bin ]; then
     echo "ERROR: missing tofino.bin in ${P4C_OUT}"
     exit 1
