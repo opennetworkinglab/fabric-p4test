@@ -14,33 +14,97 @@
 
 # Docker image to run PTF-based data plane tests for ONOS fabric.p4
 
-FROM bitnami/minideb:stretch as builder
+ARG GRPC_VER=1.26
+ARG PROTOBUF_VER=3.12
+
+FROM python:2.7.13 as proto-deps
+
+ARG GRPC_VER
 
 ENV BUILD_DEPS \
-    python-pip \
-    python-setuptools \
-    git
-RUN install_packages $BUILD_DEPS
+    autoconf \
+    automake \
+    ca-certificates \
+    curl \
+    g++ \
+    net-tools
+RUN apt-get update
+RUN apt-get install -y $BUILD_DEPS
+RUN pip install grpcio-tools==$GRPC_VER
 
-RUN mkdir -p /ouput
+RUN mkdir -p /output
+RUN echo "Building gnmi proto"
+RUN git clone https://github.com/openconfig/gnmi.git /tmp/github.com/openconfig/gnmi
+WORKDIR /tmp/github.com/openconfig/gnmi/proto
+RUN sed -i "s|github.com/openconfig/gnmi/proto/gnmi_ext|gnmi_ext|g" /tmp/github.com/openconfig/gnmi/proto/gnmi/gnmi.proto
+
+RUN python -m grpc_tools.protoc -I=/tmp/github.com/openconfig/gnmi/proto --python_out=/output gnmi_ext/gnmi_ext.proto
+RUN python -m grpc_tools.protoc -I=/tmp/github.com/openconfig/gnmi/proto --python_out=/output --grpc_python_out=/output gnmi/gnmi.proto
+
+RUN echo "Building p4runtime proto"
+RUN git clone https://github.com/p4lang/p4runtime.git /tmp/github.com/p4lang/p4runtime
+RUN git clone https://github.com/googleapis/googleapis /tmp/github.com/googleapis/googleapis
+WORKDIR /tmp/github.com/p4lang/p4runtime/proto
+ENV PROTOS="\
+/tmp/github.com/p4lang/p4runtime/proto/p4/v1/p4data.proto \
+/tmp/github.com/p4lang/p4runtime/proto/p4/v1/p4runtime.proto \
+/tmp/github.com/p4lang/p4runtime/proto/p4/config/v1/p4info.proto \
+/tmp/github.com/p4lang/p4runtime/proto/p4/config/v1/p4types.proto \
+/tmp/github.com/googleapis/googleapis/google/rpc/status.proto \
+/tmp/github.com/googleapis/googleapis/google/rpc/code.proto"
+RUN python -m grpc_tools.protoc -I=/tmp/github.com/p4lang/p4runtime/proto:/tmp/github.com/googleapis/googleapis --python_out=/output --grpc_python_out=/output $PROTOS
+
+RUN echo "Building testvector proto"
+RUN git clone https://github.com/stratum/testvectors -b import-p4lang-p4runtime /tmp/github.com/stratum/testvectors
+WORKDIR /tmp/github.com/stratum/testvectors/proto
+RUN git pull
+RUN python -m grpc_tools.protoc -I=.:/tmp/github.com/openconfig/gnmi/proto:/tmp/github.com/p4lang/p4runtime/proto:/tmp/github.com/googleapis/googleapis --python_out=/output testvector/tv.proto
+RUN cp /tmp/github.com/stratum/testvectors/utils/python/tvutils.py /output/testvector/tvutils.py
+
+RUN touch /output/gnmi_ext/__init__.py
+RUN touch /output/gnmi/__init__.py
+RUN touch /output/google/__init__.py
+RUN touch /output/google/rpc/__init__.py
+RUN touch /output/__init__.py
+RUN touch /output/p4/__init__.py
+RUN touch /output/p4/config/__init__.py
+RUN touch /output/p4/config/v1/__init__.py
+RUN touch /output/p4/v1/__init__.py
+RUN touch /output/testvector/__init__.py
+
+FROM bitnami/minideb:stretch as ptf-deps
+
+ARG GRPC_VER
+ARG PROTOBUF_VER
+
+ENV RUNTIME_DEPS \
+	python \
+	python-pip \
+	python-setuptools \
+    git
 
 ENV PIP_DEPS \
     git+https://github.com/p4lang/scapy-vxlan \
-    git+https://github.com/p4lang/ptf.git
-RUN pip install --no-cache-dir --root /output $PIP_DEPS
+    git+https://github.com/p4lang/ptf \
+    protobuf==$PROTOBUF_VER \
+    grpcio==$GRPC_VER
 
-FROM opennetworking/p4mn:stable as runtime
+RUN install_packages $RUNTIME_DEPS
+RUN pip install --no-cache-dir --root /python_output $PIP_DEPS
 
-LABEL maintainer="onos-dev@onosproject.org"
-LABEL description="Docker image to run PTF-based data plane tests for ONOS fabric.p4"
-LABEL url="https://github.com/opennetworkinglab/fabric-p4test"
+
+FROM bitnami/minideb:stretch
 
 ENV RUNTIME_DEPS \
-    make
+    make \
+    net-tools \
+	python \
+	python-setuptools 
+
 RUN install_packages $RUNTIME_DEPS
 
-COPY --from=builder /output /
-
-ENV DOCKER_RUN true
+COPY --from=proto-deps /output /output
+COPY --from=ptf-deps /python_output /
+RUN ldconfig
 
 ENTRYPOINT []

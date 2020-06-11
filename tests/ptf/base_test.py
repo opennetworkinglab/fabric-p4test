@@ -22,6 +22,7 @@ import Queue
 import sys
 import threading
 import time
+import os
 from StringIO import StringIO
 from collections import Counter
 from functools import wraps, partial
@@ -39,6 +40,7 @@ from p4.v1 import p4runtime_pb2, p4runtime_pb2_grpc
 from ptf import config
 from ptf.base_tests import BaseTest
 from ptf.dataplane import match_exp_pkt
+from testvector import tvutils
 
 
 # See https://gist.github.com/carymrobbins/8940382
@@ -188,6 +190,8 @@ class P4RuntimeTest(BaseTest):
         self.dataplane = ptf.dataplane_instance
         self.dataplane.flush()
 
+        self.tv_list = []
+        self.tv_name = self.__class__.__name__
         self._swports = []
         for device, port, ifname in config["interfaces"]:
             self._swports.append(port)
@@ -289,8 +293,21 @@ class P4RuntimeTest(BaseTest):
 
     def tearDown(self):
         self.tear_down_stream()
+        self.write_test_vectors_to_files()
         BaseTest.tearDown(self)
 
+    def write_test_vectors_to_files(self):
+        #Create directory if doesn't exist
+        if not os.path.exists(os.getcwd()+"/"+self.tv_name):
+            os.makedirs(os.getcwd()+"/"+self.tv_name)
+        dir_name = os.getcwd()+"/"+self.tv_name
+        i=1
+        for tv in self.tv_list:
+            f = open(dir_name+"/"+self.tv_name+str(i)+'.pb.txt', 'w')
+            f.write(google.protobuf.text_format.MessageToString(tv))
+            f.close()
+            i = i+1
+    
     def tear_down_stream(self):
         self.stream_out_q.put(None)
         self.stream_recv_thread.join()
@@ -305,6 +322,12 @@ class P4RuntimeTest(BaseTest):
     def verify_packet_in(self, exp_pkt, exp_in_port, timeout=2):
         pkt_in_msg = self.get_packet_in(timeout=timeout)
         in_port_ = stringify(exp_in_port, 2)
+        exp_pkt_in = p4runtime_pb2.PacketIn()
+        exp_pkt_in.payload=str(exp_pkt)
+        ingress_physical_port = exp_pkt_in.metadata.add()
+        ingress_physical_port.metadata_id = 0
+        ingress_physical_port.value = in_port_
+        tvutils.add_packet_in_expectation(self.tc,exp_pkt_in)
         rx_in_port_ = pkt_in_msg.metadata[0].value
         if in_port_ != rx_in_port_:
             rx_inport = struct.unpack("!h", rx_in_port_)[0]
@@ -323,7 +346,7 @@ class P4RuntimeTest(BaseTest):
         egress_physical_port.value = port_hex
 
         self.send_packet_out(packet_out)
-        testutils.verify_packet(self, pkt, out_port)
+        self.verify_packet(pkt, out_port)
 
     def get_stream_packet(self, type_, timeout=1):
         start = time.time()
@@ -343,6 +366,7 @@ class P4RuntimeTest(BaseTest):
     def send_packet_out(self, packet):
         packet_out_req = p4runtime_pb2.StreamMessageRequest()
         packet_out_req.packet.CopyFrom(packet)
+        tvutils.add_packet_out_operation(self.tc,packet)
         self.stream_out_q.put(packet_out_req)
 
     def swports(self, idx):
@@ -376,6 +400,35 @@ class P4RuntimeTest(BaseTest):
             if mf.name == mf_name:
                 return mf.id
         raise Exception("Match field '%s' not found in table '%s'" % (mf_name, table_name))
+
+    def send_packet(self, port, pkt):
+        tvutils.add_traffic_stimulus(self.tc,port,pkt)
+        testutils.send_packet(self, port, str(pkt))
+
+    def verify_packet(self, exp_pkt, port):
+        port_list = []
+        port_list.append(port)
+        tvutils.add_traffic_expectation(self.tc,port_list,exp_pkt)
+        testutils.verify_packet(self, exp_pkt, port)
+
+    def verify_each_packet_on_each_port(self, packets, ports):
+        for i in range(len(packets)):
+            port_list = []
+            port_list.append(ports[i])
+            tvutils.add_traffic_expectation(self.tc, port_list, packets[i])
+        testutils.verify_each_packet_on_each_port(self, packets, ports)
+
+    def verify_packets(self, pkt, ports):
+        for port in ports:
+            port_list = []
+            port_list.append(port)
+            tvutils.add_traffic_expectation(self.tc, port_list, pkt)
+        testutils.verify_packets(self, pkt, ports)
+    
+    def verify_any_packet_any_port(self, pkts, ports):
+        for pkt in pkts:
+            tvutils.add_traffic_expectation(self.tc, ports, pkt)
+        return testutils.verify_any_packet_any_port(self,pkts,ports)
 
     # These are attempts at convenience functions aimed at making writing
     # P4Runtime PTF tests easier.
@@ -506,6 +559,7 @@ class P4RuntimeTest(BaseTest):
 
     def write_request(self, req, store=True):
         rep = self._write(req)
+        tvutils.add_write_operation(self.tc,req,rep)
         if store:
             self.reqs.append(req)
         return rep
@@ -678,6 +732,12 @@ class P4RuntimeTest(BaseTest):
         for update in updates:
             update.type = p4runtime_pb2.Update.DELETE
             new_req.updates.add().CopyFrom(update)
+        # TV Code
+        if len(reqs) != 0:
+            self.tc = tvutils.get_new_testcase(self.tv)
+            self.tc.test_case_id="Undo Write Requests"
+            tvutils.add_write_operation(self.tc,new_req)
+        # End TV Code
         self._write(new_req)
 
 
@@ -719,9 +779,16 @@ def autocleanup(f):
         test = args[0]
         assert (isinstance(test, P4RuntimeTest))
         try:
+            if len(kwargs)!=0 and kwargs['tc_name'] !="":
+                test.tv = tvutils.get_new_testvector()
+                test.tc = tvutils.get_new_testcase(test.tv,kwargs['tc_name'])
+            else:
+                test.tv = tvutils.get_new_testvector()
+                test.tc = tvutils.get_new_testcase(test.tv,test.tv_name)
             return f(*args, **kwargs)
         finally:
             test.undo_write_requests(test.reqs)
+            test.tv_list.append(test.tv)
 
     return handle
 

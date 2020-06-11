@@ -31,6 +31,7 @@ from collections import OrderedDict
 import google.protobuf.text_format
 import grpc
 from p4.v1 import p4runtime_pb2, p4runtime_pb2_grpc
+from testvector import tvutils
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("PTF runner")
@@ -159,6 +160,13 @@ def update_config(p4info_path, bmv2_json_path, tofino_bin_path,
         config.p4_device_config = device_config
         request.action = p4runtime_pb2.SetForwardingPipelineConfigRequest.VERIFY_AND_COMMIT
         try:
+            tv = tvutils.get_new_testvector()
+            tv_name = "PipelineConfig"
+            tc = tvutils.get_new_testcase(tv, tv_name)
+            tvutils.add_pipeline_config_operation(tc,request)
+            f = open(tv_name+'.pb.txt', 'w')
+            f.write(google.protobuf.text_format.MessageToString(tv))
+            f.close()
             stub.SetForwardingPipelineConfig(request)
         except Exception as e:
             error("Error during SetForwardingPipelineConfig")
