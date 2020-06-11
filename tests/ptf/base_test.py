@@ -779,7 +779,7 @@ def autocleanup(f):
         test = args[0]
         assert (isinstance(test, P4RuntimeTest))
         try:
-            if len(kwargs)!=0 and kwargs['tc_name'] !="":
+            if 'tc_name' in kwargs:
                 test.tv = tvutils.get_new_testvector()
                 test.tc = tvutils.get_new_testcase(test.tv,kwargs['tc_name'])
             else:
