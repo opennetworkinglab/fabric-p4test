@@ -297,17 +297,17 @@ class P4RuntimeTest(BaseTest):
         BaseTest.tearDown(self)
 
     def write_test_vectors_to_files(self):
-        #Create directory if doesn't exist
-        if not os.path.exists(os.getcwd()+"/"+self.tv_name):
-            os.makedirs(os.getcwd()+"/"+self.tv_name)
-        dir_name = os.getcwd()+"/"+self.tv_name
-        i=1
+        # Create directory if doesn't exist
+        if not os.path.exists(os.getcwd() + "/" + self.tv_name):
+            os.makedirs(os.getcwd() + "/" + self.tv_name)
+        dir_name = os.getcwd() + "/" + self.tv_name
+        i = 1
         for tv in self.tv_list:
-            f = open(dir_name+"/"+self.tv_name+str(i)+'.pb.txt', 'w')
+            f = open(dir_name + "/" + self.tv_name + str(i) + '.pb.txt', 'w')
             f.write(google.protobuf.text_format.MessageToString(tv))
             f.close()
-            i = i+1
-    
+            i = i + 1
+
     def tear_down_stream(self):
         self.stream_out_q.put(None)
         self.stream_recv_thread.join()
@@ -323,11 +323,11 @@ class P4RuntimeTest(BaseTest):
         pkt_in_msg = self.get_packet_in(timeout=timeout)
         in_port_ = stringify(exp_in_port, 2)
         exp_pkt_in = p4runtime_pb2.PacketIn()
-        exp_pkt_in.payload=str(exp_pkt)
+        exp_pkt_in.payload = str(exp_pkt)
         ingress_physical_port = exp_pkt_in.metadata.add()
         ingress_physical_port.metadata_id = 0
         ingress_physical_port.value = in_port_
-        tvutils.add_packet_in_expectation(self.tc,exp_pkt_in)
+        tvutils.add_packet_in_expectation(self.tc, exp_pkt_in)
         rx_in_port_ = pkt_in_msg.metadata[0].value
         if in_port_ != rx_in_port_:
             rx_inport = struct.unpack("!h", rx_in_port_)[0]
@@ -366,7 +366,7 @@ class P4RuntimeTest(BaseTest):
     def send_packet_out(self, packet):
         packet_out_req = p4runtime_pb2.StreamMessageRequest()
         packet_out_req.packet.CopyFrom(packet)
-        tvutils.add_packet_out_operation(self.tc,packet)
+        tvutils.add_packet_out_operation(self.tc, packet)
         self.stream_out_q.put(packet_out_req)
 
     def swports(self, idx):
@@ -402,13 +402,13 @@ class P4RuntimeTest(BaseTest):
         raise Exception("Match field '%s' not found in table '%s'" % (mf_name, table_name))
 
     def send_packet(self, port, pkt):
-        tvutils.add_traffic_stimulus(self.tc,port,pkt)
+        tvutils.add_traffic_stimulus(self.tc, port, pkt)
         testutils.send_packet(self, port, str(pkt))
 
     def verify_packet(self, exp_pkt, port):
         port_list = []
         port_list.append(port)
-        tvutils.add_traffic_expectation(self.tc,port_list,exp_pkt)
+        tvutils.add_traffic_expectation(self.tc, port_list, exp_pkt)
         testutils.verify_packet(self, exp_pkt, port)
 
     def verify_each_packet_on_each_port(self, packets, ports):
@@ -424,11 +424,11 @@ class P4RuntimeTest(BaseTest):
             port_list.append(port)
             tvutils.add_traffic_expectation(self.tc, port_list, pkt)
         testutils.verify_packets(self, pkt, ports)
-    
+
     def verify_any_packet_any_port(self, pkts, ports):
         for pkt in pkts:
             tvutils.add_traffic_expectation(self.tc, ports, pkt)
-        return testutils.verify_any_packet_any_port(self,pkts,ports)
+        return testutils.verify_any_packet_any_port(self, pkts, ports)
 
     # These are attempts at convenience functions aimed at making writing
     # P4Runtime PTF tests easier.
@@ -559,7 +559,7 @@ class P4RuntimeTest(BaseTest):
 
     def write_request(self, req, store=True):
         rep = self._write(req)
-        tvutils.add_write_operation(self.tc,req,rep)
+        tvutils.add_write_operation(self.tc, req, rep)
         if store:
             self.reqs.append(req)
         return rep
@@ -735,8 +735,8 @@ class P4RuntimeTest(BaseTest):
         # TV Code
         if len(reqs) != 0:
             self.tc = tvutils.get_new_testcase(self.tv)
-            self.tc.test_case_id="Undo Write Requests"
-            tvutils.add_write_operation(self.tc,new_req)
+            self.tc.test_case_id = "Undo Write Requests"
+            tvutils.add_write_operation(self.tc, new_req)
         # End TV Code
         self._write(new_req)
 
@@ -781,10 +781,10 @@ def autocleanup(f):
         try:
             if 'tc_name' in kwargs:
                 test.tv = tvutils.get_new_testvector()
-                test.tc = tvutils.get_new_testcase(test.tv,kwargs['tc_name'])
+                test.tc = tvutils.get_new_testcase(test.tv, kwargs['tc_name'])
             else:
                 test.tv = tvutils.get_new_testvector()
-                test.tc = tvutils.get_new_testcase(test.tv,test.tv_name)
+                test.tc = tvutils.get_new_testcase(test.tv, test.tv_name)
             return f(*args, **kwargs)
         finally:
             test.undo_write_requests(test.reqs)

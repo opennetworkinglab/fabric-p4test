@@ -41,8 +41,8 @@ class FabricBridgingTest(BridgingTest):
         print ""
         for vlan_conf, tagged in vlan_confs.items():
             for pkt_type in ["tcp", "udp", "icmp"]:
-                pktlen=120
-                tc_name = pkt_type+"_VLAN_"+str(pktlen)
+                pktlen = 120
+                tc_name = pkt_type + "_VLAN_" + str(pktlen)
                 print "Testing %s packet with VLAN %s.." % (pkt_type, vlan_conf)
                 pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
                     pktlen=pktlen)
@@ -58,12 +58,12 @@ class FabricDoubleVlanXConnectTest(DoubleVlanXConnectTest):
     def runTest(self):
         print ""
         for pkt_type in ["tcp", "udp", "icmp"]:
-            pktlen=120
-            tc_name = pkt_type+"_"+str(pktlen)
+            pktlen = 120
+            tc_name = pkt_type + "_" + str(pktlen)
             print "Testing %s packet..." % pkt_type
             pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
                 pktlen=pktlen)
-            self.doRunTest(pkt,tc_name=tc_name)
+            self.doRunTest(pkt, tc_name=tc_name)
 
 
 @group("multicast")
@@ -95,7 +95,7 @@ class FabricArpBroadcastMixedTest(ArpBroadcastTest):
 
 class FabricIPv4UnicastTest(IPv4UnicastTest):
     @autocleanup
-    def doRunTest(self, pkt, mac_dest, tagged1, tagged2,tc_name):        
+    def doRunTest(self, pkt, mac_dest, tagged1, tagged2, tc_name):
         self.runIPv4UnicastTest(
             pkt, mac_dest, prefix_len=24, tagged1=tagged1, tagged2=tagged2)
 
@@ -103,7 +103,7 @@ class FabricIPv4UnicastTest(IPv4UnicastTest):
         print ""
         for vlan_conf, tagged in vlan_confs.items():
             for pkt_type in ["tcp", "udp", "icmp"]:
-                tc_name = pkt_type+"_VLAN_"+vlan_conf
+                tc_name = pkt_type + "_VLAN_" + vlan_conf
                 print "Testing %s packet with VLAN %s..." \
                       % (pkt_type, vlan_conf)
                 pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
@@ -111,7 +111,7 @@ class FabricIPv4UnicastTest(IPv4UnicastTest):
                     ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4,
                     pktlen=MIN_PKT_LEN
                 )
-                self.doRunTest(pkt, HOST2_MAC, tagged[0], tagged[1],tc_name=tc_name)
+                self.doRunTest(pkt, HOST2_MAC, tagged[0], tagged[1], tc_name=tc_name)
 
 
 class FabricIPv4UnicastGtpTest(IPv4UnicastTest):
@@ -454,7 +454,7 @@ class FabricIPv4MplsGroupTest(IPv4UnicastTest):
         print ""
         for tagged1 in [True, False]:
             for pkt_type in ["tcp", "udp", "icmp"]:
-                tc_name = pkt_type+"_tagged_"+str(tagged1)
+                tc_name = pkt_type + "_tagged_" + str(tagged1)
                 print "Testing %s packet with tagged=%s..." \
                       % (pkt_type, tagged1)
                 pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
@@ -474,7 +474,7 @@ class FabricMplsSegmentRoutingTest(MplsSegmentRoutingTest):
         print ""
         for pkt_type in ["tcp", "udp", "icmp"]:
             for next_hop_spine in [True, False]:
-                tc_name = pkt_type+"_next_hop_spine_"+str(next_hop_spine)
+                tc_name = pkt_type + "_next_hop_spine_" + str(next_hop_spine)
                 print "Testing %s packet, next_hop_spine=%s..." \
                       % (pkt_type, next_hop_spine)
                 pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
@@ -567,7 +567,7 @@ class SpgwDownlinkTest(SpgwSimpleTest):
                 for mpls in [False, True]:
                     if mpls and tagged[1]:
                         continue
-                    tc_name = "VLAN_"+vlan_conf+"_"+pkt_type+"_mpls_"+str(mpls)
+                    tc_name = "VLAN_" + vlan_conf + "_" + pkt_type + "_mpls_" + str(mpls)
                     print "Testing VLAN=%s, pkt=%s, mpls=%s..." \
                           % (vlan_conf, pkt_type, mpls)
                     pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(

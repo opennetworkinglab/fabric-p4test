@@ -1022,7 +1022,7 @@ class PacketInTest(FabricTest):
                 self.set_ingress_port_vlan(port, True, vlan_id, vlan_id)
             else:
                 self.set_ingress_port_vlan(port, False, 0, vlan_id)
-            self.send_packet(port,str(pkt))
+            self.send_packet(port, str(pkt))
             self.verify_packet_in(pkt, port)
         testutils.verify_no_other_packets(self)
 
