@@ -164,7 +164,10 @@ def update_config(p4info_path, bmv2_json_path, tofino_bin_path,
             tv_name = "PipelineConfig"
             tc = tvutils.get_new_testcase(tv, tv_name)
             tvutils.add_pipeline_config_operation(tc, request)
-            f = open(tv_name + '.pb.txt', 'w')
+            tv_base_dir = os.getcwd() + "/testvectors/"
+            if not os.path.exists(tv_base_dir):
+                os.makedirs(tv_base_dir)
+            f = open(tv_base_dir+tv_name + '.pb.txt', 'w')
             f.write(google.protobuf.text_format.MessageToString(tv))
             f.close()
             stub.SetForwardingPipelineConfig(request)

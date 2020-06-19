@@ -42,7 +42,7 @@ class FabricBridgingTest(BridgingTest):
         for vlan_conf, tagged in vlan_confs.items():
             for pkt_type in ["tcp", "udp", "icmp"]:
                 pktlen = 120
-                tc_name = pkt_type + "_VLAN_" + str(pktlen)
+                tc_name = pkt_type + "_VLAN_" + vlan_conf + "_" + str(pktlen)
                 print "Testing %s packet with VLAN %s.." % (pkt_type, vlan_conf)
                 pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
                     pktlen=pktlen)

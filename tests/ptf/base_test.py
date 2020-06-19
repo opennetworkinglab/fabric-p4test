@@ -298,12 +298,13 @@ class P4RuntimeTest(BaseTest):
 
     def write_test_vectors_to_files(self):
         # Create directory if doesn't exist
-        if not os.path.exists(os.getcwd() + "/" + self.tv_name):
-            os.makedirs(os.getcwd() + "/" + self.tv_name)
-        dir_name = os.getcwd() + "/" + self.tv_name
+        tv_base_dir = os.getcwd() + "/testvectors/"
+        if not os.path.exists(tv_base_dir + self.tv_name):
+            os.makedirs(tv_base_dir + self.tv_name)
+        tv_dir = tv_base_dir + self.tv_name
         i = 1
         for tv in self.tv_list:
-            f = open(dir_name + "/" + self.tv_name + str(i) + '.pb.txt', 'w')
+            f = open(tv_dir + "/" + self.tv_name + str(i) + '.pb.txt', 'w')
             f.write(google.protobuf.text_format.MessageToString(tv))
             f.close()
             i = i + 1
@@ -559,7 +560,7 @@ class P4RuntimeTest(BaseTest):
 
     def write_request(self, req, store=True):
         rep = self._write(req)
-        tvutils.add_write_operation(self.tc, req, rep)
+        tvutils.add_write_operation(self.tc, req)
         if store:
             self.reqs.append(req)
         return rep
