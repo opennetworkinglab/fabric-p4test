@@ -20,7 +20,7 @@ FP4TEST_ROOT="${DIR}"/../..
 
 # PTF tester image
 # TODO: depend on a simple tester image (this image contains also BMv2)
-FP4TEST_DOCKER_IMG=${FP4TEST_DOCKER_IMG:-onosproject/fabric-p4test:latest}
+FP4TEST_DOCKER_IMG=${FP4TEST_DOCKER_IMG:-stratumproject/testvectors:ptf}
 SDE_VERSION=${SDE_VERSION:-9.0.0}
 # Use image sha to pin a specific stratum_bmv2 build and have reproducible runs.
 # We could instrument CI to test on both a stable version and the latest one.
