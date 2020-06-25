@@ -1,13 +1,28 @@
 #!/usr/bin/env bash
+# Copyright 2020-present Open Networking Foundation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
-set -e
+set -ex
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" > /dev/null 2>&1 && pwd)"
 
 # From:
 # https://github.com/p4lang/behavioral-model/blob/master/tools/veth_setup.sh
 
 for idx in 0 1 2 3 4 5 6 7 8; do
-    intf0="veth$(($idx*2))"
-    intf1="veth$(($idx*2+1))"
+    intf0="veth$(($idx * 2))"
+    intf1="veth$(($idx * 2 + 1))"
     if ! ip link show $intf0 &> /dev/null; then
         ip link add name $intf0 type veth peer name $intf1
         ip link set dev $intf0 up
@@ -38,3 +53,18 @@ for idx in 0 1 2 3 4 5 6 7 8; do
         sysctl net.ipv6.conf.${intf1}.disable_ipv6=1
     fi
 done
+
+stratum_bmv2 \
+    -bmv2_log_level=trace \
+    -chassis_config_file="${DIR}"/chassis_config.txt \
+    -cpu_port=255 \
+    -device_id=1 \
+    -external-stratum-urls=0.0.0.0:28000 \
+    -forwarding_pipeline_configs_file=/dev/null \
+    -initial_pipeline=/root/dummy.json \
+    -local_stratum_url=localhost:28000 \
+    -log_dir="${DIR}"/log/ \
+    -logtostderr=true \
+    -persistent_config_dir=/tmp/ \
+    -write_req_log_file="${DIR}"/log/p4rt-write-reqs.log \
+    &> "${DIR}"/log/stratum_bmv2.log

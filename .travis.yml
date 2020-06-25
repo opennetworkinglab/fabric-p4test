@@ -10,34 +10,25 @@ python:
 
 env:
   global:
-    - ONOS_BRANCH=master
+    - ONOS_BRANCH=onos-2.2
     - PROFILES=all
-
-install:
-  - docker build -t fp4test .
+    - FP4TEST_DOCKER_IMG=stratumproject/testvectors:ptf
+    - ONOS_ROOT=/tmp/onos
 
 jobs:
   include:
     - stage: ptf
-      name: "PTF tests"
+      name: "Run PTF tests on stratum_bmv2"
       script:
         - git clone --depth 1 https://github.com/opennetworkinglab/onos /tmp/onos -b $ONOS_BRANCH
-        - docker run --privileged --rm -v $PWD:/fp4test -v /tmp/onos:/onos fp4test bash /fp4test/travis/run_test.sh /onos $PROFILES
+        - ./run/bmv2/run $PROFILES
     - stage: checkstyle
       name: "Checkstyle"
       install: skip
       script:
         - pip install pycodestyle
         - find . -name \*.py -exec pycodestyle --max-line-length=120 --ignore=E126,E127,E722,E502,E131 {} +
-    - stage: push
-      name: "Docker push"
-      script:
-        - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-        - docker tag fp4test $DOCKER_REPO
-        - docker push $DOCKER_REPO
 
 stages:
   - ptf
   - checkstyle
-  - name: push
-    if: type != pull_request AND branch = master
