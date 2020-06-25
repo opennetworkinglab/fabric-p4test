@@ -12,7 +12,6 @@ env:
   global:
     - ONOS_BRANCH=onos-2.2
     - PROFILES=all
-    - FP4TEST_DOCKER_IMG=stratumproject/testvectors:ptf
     - ONOS_ROOT=/tmp/onos
 
 jobs:
