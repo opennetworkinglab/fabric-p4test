@@ -12,11 +12,8 @@ env:
   global:
     - ONOS_BRANCH=onos-2.2
     - PROFILES=all
-    - FP4TEST_DOCKER_IMG=fp4test
+    - FP4TEST_DOCKER_IMG=stratumproject/testvectors:ptf
     - ONOS_ROOT=/tmp/onos
-
-install:
-  - docker build -t fp4test .
 
 jobs:
   include:
@@ -31,15 +28,7 @@ jobs:
       script:
         - pip install pycodestyle
         - find . -name \*.py -exec pycodestyle --max-line-length=120 --ignore=E126,E127,E722,E502,E131 {} +
-    - stage: push
-      name: "Docker push"
-      script:
-        - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-        - docker tag fp4test $DOCKER_REPO
-        - docker push $DOCKER_REPO
 
 stages:
   - ptf
   - checkstyle
-  - name: push
-    if: type != pull_request AND branch = master
