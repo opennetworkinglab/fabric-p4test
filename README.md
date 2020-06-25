@@ -179,11 +179,11 @@ We are currently in the process of migrating the test runner framework from PTF
 to Stratum's [testvectors-runner].
 
 For this reason, some PTF-based test case definitions are currently instrumented
-to generate protobuf-based TestVectors (TVs) (under `tests/ptf/testvectors`).
+to generate protobuf-based [TestVectors] (TVs) (under `tests/ptf/testvectors`).
 The long-term goal is to remove all PTF references from the codebase, but
 continue using Python as a convenient way to generate TVs. For now, we use a
 Python library (`tvutils`) to wrap PTF and P4Runtime calls in methods that
-generate TV's stimuli and expectations before calling the
+generate TV's actions, stimuli and expectations before calling the
 corresponding PTF or P4Runtime gRPC methods.
 
 ## Support
@@ -198,3 +198,4 @@ mailing list:
 [fabric profiles]: tests/ptf/README.md#fabric-profiles
 [bmv2]: https://github.com/p4lang/behavioral-model
 [testvectors-runner]: https://github.com/stratum/testvectors-runner
+[TestVectors]: https://github.com/stratum/testvectors
