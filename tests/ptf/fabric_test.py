@@ -362,11 +362,14 @@ class FabricTest(P4RuntimeTest):
 
     def add_forwarding_routing_v4_entry(self, ipv4_dstAddr, ipv4_pLen,
                                         next_id):
-        ipv4_dstAddr_ = ipv4_to_binary(ipv4_dstAddr)
         next_id_ = stringify(next_id, 4)
+        if ipv4_pLen > 0:
+            ipv4_dstAddr_ = ipv4_to_binary(ipv4_dstAddr)
+            mk = [self.Lpm("ipv4_dst", ipv4_dstAddr_, ipv4_pLen)]
+        else:
+            mk = None
         self.send_request_add_entry_to_action(
-            "forwarding.routing_v4",
-            [self.Lpm("ipv4_dst", ipv4_dstAddr_, ipv4_pLen)],
+            "forwarding.routing_v4", mk,
             "forwarding.set_next_id_routing_v4", [("next_id", next_id_)])
 
     def add_forwarding_mpls_entry(self, label, next_id):
