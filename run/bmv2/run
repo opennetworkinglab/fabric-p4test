@@ -7,6 +7,10 @@ set -e
 # TODO: instrument CI to test on both a stable version and the latest one
 MN_STRATUM_IMG="opennetworking/mn-stratum:latest@sha256:1bba2e2c06460c73b0133ae22829937786217e5f20f8f80fcc3063dcf6707ebe"
 
+# Tester image
+# Contains PTF and tvutils libraries, as well as P4RT, gNMI, and TV Python bindings
+TESTER_DOCKER_IMG=stratumproject/testvectors:ptf@sha256:071fc823207c62b221500dc648aff427010a3a54534efd56e0c870e0f19302cf
+
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" > /dev/null 2>&1 && pwd)"
 ROOT_DIR=${DIR}/../..
 
@@ -41,12 +45,11 @@ sleep 2
 
 # tester
 # Run and show log
-testerImageName=${FP4TEST_DOCKER_IMG:-stratumproject/testvectors:ptf}
-testerRunName=fabric-p4test-${rnd}
+testerRunName=tester-${rnd}
 echo "*** Starting ${testerRunName}..."
 docker run --name ${testerRunName} -it --privileged --rm \
     --network "container:${dutRunName}" \
     -v "${ROOT_DIR}":/fabric-p4test \
     -v "${ONOS_ROOT}":/onos -e ONOS_ROOT=/onos \
-    "${testerImageName}" \
+    "${TESTER_DOCKER_IMG}" \
     bash /fabric-p4test/run/bmv2/start_test.sh "${FABRIC_PROFILE}" ${@}
