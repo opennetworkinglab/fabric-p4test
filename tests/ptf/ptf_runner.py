@@ -32,6 +32,8 @@ import google.protobuf.text_format
 import grpc
 from p4.v1 import p4runtime_pb2, p4runtime_pb2_grpc
 from testvector import tvutils
+from portmap import pmutils
+from target import targetutils
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("PTF runner")
@@ -91,6 +93,19 @@ def update_config(p4info_path, bmv2_json_path, tofino_bin_path,
     """
     channel = grpc.insecure_channel(grpc_addr)
     stub = p4runtime_pb2_grpc.P4RuntimeStub(channel)
+
+    # Create new target proto object for testvectors
+    if bmv2_json_path is not None:
+        tv_target = targetutils.get_new_target(grpc_addr, target_id="bmv2")
+    else:
+        tv_target = targetutils.get_new_target(grpc_addr, target_id="tofino")
+    # Write the target proto object to testvectors/target.pb.txt
+    tv_base_dir = os.getcwd() + "/testvectors/"
+    if not os.path.exists(tv_base_dir):
+        os.makedirs(tv_base_dir)
+    f = open(tv_base_dir + 'target.pb.txt', 'w')
+    f.write(google.protobuf.text_format.MessageToString(tv_target))
+    f.close()
 
     info("Sending P4 config")
 
@@ -159,17 +174,18 @@ def update_config(p4info_path, bmv2_json_path, tofino_bin_path,
                                                 tofino_cxt_json_path)
         config.p4_device_config = device_config
         request.action = p4runtime_pb2.SetForwardingPipelineConfigRequest.VERIFY_AND_COMMIT
+        # Create new testvector for set pipeline config and write to testvectors/PipelineConfig.pb.txt
+        tv = tvutils.get_new_testvector()
+        tv_name = "PipelineConfig"
+        tc = tvutils.get_new_testcase(tv, tv_name)
+        tvutils.add_pipeline_config_operation(tc, request)
+        tv_base_dir = os.getcwd() + "/testvectors/"
+        if not os.path.exists(tv_base_dir):
+            os.makedirs(tv_base_dir)
+        f = open(tv_base_dir + tv_name + '.pb.txt', 'w')
+        f.write(google.protobuf.text_format.MessageToString(tv))
+        f.close()
         try:
-            tv = tvutils.get_new_testvector()
-            tv_name = "PipelineConfig"
-            tc = tvutils.get_new_testcase(tv, tv_name)
-            tvutils.add_pipeline_config_operation(tc, request)
-            tv_base_dir = os.getcwd() + "/testvectors/"
-            if not os.path.exists(tv_base_dir):
-                os.makedirs(tv_base_dir)
-            f = open(tv_base_dir + tv_name + '.pb.txt', 'w')
-            f.write(google.protobuf.text_format.MessageToString(tv))
-            f.close()
             stub.SetForwardingPipelineConfig(request)
         except Exception as e:
             error("Error during SetForwardingPipelineConfig")
@@ -193,10 +209,22 @@ def run_test(p4info_path, grpc_addr, device_id, cpu_port, ptfdir, port_map_path,
     port_map = OrderedDict()
     with open(port_map_path, 'r') as port_map_f:
         port_list = json.load(port_map_f)
+        # Create new portmap proto object for testvectors
+        tv_portmap = pmutils.get_new_portmap()
         for entry in port_list:
             p4_port = entry["p4_port"]
             iface_name = entry["iface_name"]
             port_map[p4_port] = iface_name
+            # Append new entry to tv proto object
+            pmutils.add_new_entry(tv_portmap, p4_port, iface_name)
+
+    # Write the portmap proto object to testvectors/portmap.pb.txt
+    tv_base_dir = os.getcwd() + "/testvectors/"
+    if not os.path.exists(tv_base_dir):
+        os.makedirs(tv_base_dir)
+    f = open(tv_base_dir + 'portmap.pb.txt', 'w')
+    f.write(google.protobuf.text_format.MessageToString(tv_portmap))
+    f.close()
 
     if not check_ifaces(port_map.values()):
         error("Some interfaces are missing")
