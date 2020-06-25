@@ -122,8 +122,7 @@ class FabricIPv4DefaultRouteTest(IPv4UnicastTest):
             ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4,
             pktlen=MIN_PKT_LEN)
         self.runIPv4UnicastTest(
-            pkt, HOST2_MAC, prefix_len=0, tagged1=False, tagged2=False,
-            bidirectional=False)
+            pkt, HOST2_MAC, prefix_len=0, tagged1=False, tagged2=False)
 
 
 class FabricIPv4UnicastGtpTest(IPv4UnicastTest):
