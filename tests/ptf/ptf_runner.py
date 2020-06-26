@@ -100,12 +100,7 @@ def update_config(p4info_path, bmv2_json_path, tofino_bin_path,
     else:
         tv_target = targetutils.get_new_target(grpc_addr, target_id="tofino")
     # Write the target proto object to testvectors/target.pb.txt
-    tv_base_dir = os.getcwd() + "/testvectors/"
-    if not os.path.exists(tv_base_dir):
-        os.makedirs(tv_base_dir)
-    f = open(tv_base_dir + 'target.pb.txt', 'w')
-    f.write(google.protobuf.text_format.MessageToString(tv_target))
-    f.close()
+    targetutils.write_to_file(tv_target, os.getcwd())
 
     info("Sending P4 config")
 
@@ -179,12 +174,7 @@ def update_config(p4info_path, bmv2_json_path, tofino_bin_path,
         tv_name = "PipelineConfig"
         tc = tvutils.get_new_testcase(tv, tv_name)
         tvutils.add_pipeline_config_operation(tc, request)
-        tv_base_dir = os.getcwd() + "/testvectors/"
-        if not os.path.exists(tv_base_dir):
-            os.makedirs(tv_base_dir)
-        f = open(tv_base_dir + tv_name + '.pb.txt', 'w')
-        f.write(google.protobuf.text_format.MessageToString(tv))
-        f.close()
+        tvutils.write_to_file(tv, os.getcwd(), tv_name)
         try:
             stub.SetForwardingPipelineConfig(request)
         except Exception as e:
@@ -219,12 +209,7 @@ def run_test(p4info_path, grpc_addr, device_id, cpu_port, ptfdir, port_map_path,
             pmutils.add_new_entry(tv_portmap, p4_port, iface_name)
 
     # Write the portmap proto object to testvectors/portmap.pb.txt
-    tv_base_dir = os.getcwd() + "/testvectors/"
-    if not os.path.exists(tv_base_dir):
-        os.makedirs(tv_base_dir)
-    f = open(tv_base_dir + 'portmap.pb.txt', 'w')
-    f.write(google.protobuf.text_format.MessageToString(tv_portmap))
-    f.close()
+    pmutils.write_to_file(tv_portmap, os.getcwd())
 
     if not check_ifaces(port_map.values()):
         error("Some interfaces are missing")

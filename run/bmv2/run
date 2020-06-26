@@ -9,7 +9,7 @@ MN_STRATUM_IMG="opennetworking/mn-stratum:latest@sha256:1bba2e2c06460c73b0133ae2
 
 # Tester image
 # Contains PTF and tvutils libraries, as well as P4RT, gNMI, and TV Python bindings
-TESTER_DOCKER_IMG=stratumproject/testvectors:ptf@sha256:c4fe3a3a685035c2c5765f7edca04f8015966ffb8d0a6e038b79c044e1c88c2b
+TESTER_DOCKER_IMG=stratumproject/testvectors:ptf@sha256:3093f2a06294ab442c695e0c0eface6fb295222549742aabc888ff843dc42147
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" > /dev/null 2>&1 && pwd)"
 ROOT_DIR=${DIR}/../..

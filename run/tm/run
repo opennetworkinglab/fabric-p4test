@@ -20,7 +20,7 @@ FP4TEST_ROOT="${DIR}"/../..
 
 # Tester image
 # Contains PTF and tvutils libraries, as well as P4RT, gNMI, and TV Python bindings
-TESTER_DOCKER_IMG=stratumproject/testvectors:ptf@sha256:c4fe3a3a685035c2c5765f7edca04f8015966ffb8d0a6e038b79c044e1c88c2b
+TESTER_DOCKER_IMG=stratumproject/testvectors:ptf@sha256:3093f2a06294ab442c695e0c0eface6fb295222549742aabc888ff843dc42147
 SDE_VERSION=${SDE_VERSION:-9.0.0}
 # Use image sha to pin a specific stratum_bmv2 build and have reproducible runs.
 # We could instrument CI to test on both a stable version and the latest one.

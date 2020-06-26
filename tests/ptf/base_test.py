@@ -293,21 +293,8 @@ class P4RuntimeTest(BaseTest):
 
     def tearDown(self):
         self.tear_down_stream()
-        self.write_test_vectors_to_files()
+        tvutils.write_tv_list_to_files(self.tv_list, os.getcwd(), self.tv_name)
         BaseTest.tearDown(self)
-
-    def write_test_vectors_to_files(self):
-        # Create directory if doesn't exist
-        tv_base_dir = os.getcwd() + "/testvectors/"
-        if not os.path.exists(tv_base_dir + self.tv_name):
-            os.makedirs(tv_base_dir + self.tv_name)
-        tv_dir = tv_base_dir + self.tv_name
-        i = 1
-        for tv in self.tv_list:
-            f = open(tv_dir + "/" + self.tv_name + str(i) + '.pb.txt', 'w')
-            f.write(google.protobuf.text_format.MessageToString(tv))
-            f.close()
-            i = i + 1
 
     def tear_down_stream(self):
         self.stream_out_q.put(None)
