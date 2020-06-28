@@ -140,7 +140,8 @@ fail to start or affect test results negatively.
     ./run/tm/run <profile> [test-case]
     ```
 
-    **NOTE:** Testing `all` profiles is not supported on this target.
+    **NOTE:** Testing `all` profiles is not supported on this target. You must
+    execute the run command for each profile.
 
     To run all test cases for the basic `fabric` profile:
 

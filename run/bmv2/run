@@ -47,7 +47,9 @@ sleep 2
 # Run and show log
 testerRunName=tester-${rnd}
 echo "*** Starting ${testerRunName}..."
-docker run --name ${testerRunName} -it --privileged --rm \
+# Do not attach stdin if running in an environment without it (e.g., Jenkins)
+it=$(test -t 0 && echo "-it" || echo "-t")
+docker run --name ${testerRunName} ${it} --privileged --rm \
     --network "container:${dutRunName}" \
     -v "${ROOT_DIR}":/fabric-p4test \
     -v "${ONOS_ROOT}":/onos -e ONOS_ROOT=/onos \
