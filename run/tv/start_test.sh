@@ -18,7 +18,7 @@ err_report() {
     fi
 
     echo "************************************************"
-    echo "SOME PTF TESTS FAILED :("
+    echo "GENERATION OF SOME TESTVECTORS FAILED :("
     echo "************************************************"
     exit 1
 }
@@ -27,12 +27,12 @@ trap 'err_report' ERR
 cd "${PTF_DIR}"
 
 echo "************************************************"
-echo "STARTING PTF TESTS..."
+echo "STARTING TESTVECTOR GENERATION FROM PTF TESTS..."
 echo "************************************************"
 
 make -f "${DIR}"/Makefile ${@}
 
 echo "************************************************"
-echo "ALL PTF TESTS PASSED :)"
+echo "GENERATED TESTVECTORS SUCCESSFULLY :)"
 echo "************************************************"
 

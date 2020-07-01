@@ -223,8 +223,11 @@ class P4RuntimeTest(BaseTest):
         self.reqs = []
 
         self.election_id = 1
-        self.generate_tv = testutils.test_param_get("generate_tv")
-        if self.generate_tv == 'True':
+        if testutils.test_param_get("generate_tv") == 'True':
+            self.generate_tv = True
+        else: 
+            self.generate_tv = False
+        if self.generate_tv:
             self.tv_list = []
             self.tv_name = self.__class__.__name__
         else:
@@ -293,7 +296,7 @@ class P4RuntimeTest(BaseTest):
             self.fail("Failed to establish handshake")
 
     def tearDown(self):
-        if self.generate_tv == 'True':
+        if self.generate_tv:
             tvutils.write_tv_list_to_files(self.tv_list, os.getcwd(), self.tv_name)
         else:
             self.tear_down_stream()
@@ -317,7 +320,7 @@ class P4RuntimeTest(BaseTest):
         ingress_physical_port = exp_pkt_in.metadata.add()
         ingress_physical_port.metadata_id = 0
         ingress_physical_port.value = in_port_
-        if self.generate_tv == 'True':
+        if self.generate_tv:
             tvutils.add_packet_in_expectation(self.tc, exp_pkt_in)
         else:
             pkt_in_msg = self.get_packet_in(timeout=timeout)
@@ -342,7 +345,7 @@ class P4RuntimeTest(BaseTest):
         self.verify_packet(pkt, out_port)
 
     def verify_no_other_packets(self):
-        if self.generate_tv != 'True':
+        if not self.generate_tv:
             testutils.verify_no_other_packets(self)
 
     def get_stream_packet(self, type_, timeout=1):
@@ -363,7 +366,7 @@ class P4RuntimeTest(BaseTest):
     def send_packet_out(self, packet):
         packet_out_req = p4runtime_pb2.StreamMessageRequest()
         packet_out_req.packet.CopyFrom(packet)
-        if self.generate_tv == 'True':
+        if self.generate_tv:
             tvutils.add_packet_out_operation(self.tc, packet)
         else:
             self.stream_out_q.put(packet_out_req)
@@ -401,7 +404,7 @@ class P4RuntimeTest(BaseTest):
         raise Exception("Match field '%s' not found in table '%s'" % (mf_name, table_name))
 
     def send_packet(self, port, pkt):
-        if self.generate_tv == 'True':
+        if self.generate_tv:
             tvutils.add_traffic_stimulus(self.tc, port, pkt)
         else:
             testutils.send_packet(self, port, str(pkt))
@@ -409,13 +412,13 @@ class P4RuntimeTest(BaseTest):
     def verify_packet(self, exp_pkt, port):
         port_list = []
         port_list.append(port)
-        if self.generate_tv == 'True':
+        if self.generate_tv:
             tvutils.add_traffic_expectation(self.tc, port_list, exp_pkt)
         else:
             testutils.verify_packet(self, exp_pkt, port)
 
     def verify_each_packet_on_each_port(self, packets, ports):
-        if self.generate_tv == 'True':
+        if self.generate_tv:
             for i in range(len(packets)):
                 port_list = []
                 port_list.append(ports[i])
@@ -424,7 +427,7 @@ class P4RuntimeTest(BaseTest):
             testutils.verify_each_packet_on_each_port(self, packets, ports)
 
     def verify_packets(self, pkt, ports):
-        if self.generate_tv == 'True':
+        if self.generate_tv:
             for port in ports:
                 port_list = []
                 port_list.append(port)
@@ -433,7 +436,7 @@ class P4RuntimeTest(BaseTest):
             testutils.verify_packets(self, pkt, ports)
 
     def verify_any_packet_any_port(self, pkts, ports):
-        if self.generate_tv == 'True':
+        if self.generate_tv:
             for pkt in pkts:
                 tvutils.add_traffic_expectation(self.tc, ports, pkt)
             # workaround to return a port value
@@ -559,7 +562,7 @@ class P4RuntimeTest(BaseTest):
 
     def read_request(self, req):
         entities = []
-        if self.generate_tv == 'True':
+        if self.generate_tv:
             return None
         else:
             try:
@@ -572,7 +575,7 @@ class P4RuntimeTest(BaseTest):
             return entities
 
     def write_request(self, req, store=True):
-        if self.generate_tv == 'True':
+        if self.generate_tv:
             tvutils.add_write_operation(self.tc, req)
             return None
         else:
@@ -750,7 +753,7 @@ class P4RuntimeTest(BaseTest):
         for update in updates:
             update.type = p4runtime_pb2.Update.DELETE
             new_req.updates.add().CopyFrom(update)
-        if self.generate_tv == 'True':
+        if self.generate_tv:
             if len(reqs) != 0:
                 self.tc = tvutils.get_new_testcase(self.tv)
                 self.tc.test_case_id = "Undo Write Requests"
@@ -797,7 +800,7 @@ def autocleanup(f):
         test = args[0]
         assert (isinstance(test, P4RuntimeTest))
         try:
-            if test.generate_tv == 'True':
+            if test.generate_tv:
                 if 'tc_name' in kwargs:
                     test.tv = tvutils.get_new_testvector()
                     test.tc = tvutils.get_new_testcase(test.tv, kwargs['tc_name'])
@@ -807,7 +810,7 @@ def autocleanup(f):
             return f(*args, **kwargs)
         finally:
             test.undo_write_requests(test.reqs)
-            if test.generate_tv == 'True':
+            if test.generate_tv:
                 test.tv_list.append(test.tv)
 
     return handle
