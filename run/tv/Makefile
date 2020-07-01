@@ -13,7 +13,7 @@ python -u ptf_runner.py --device $(DEVICE) --port-map $(PORTMAP) \
 	$(2),
 python -u ptf_runner.py --device $(DEVICE) --port-map $(PORTMAP) \
 	--ptf-dir fabric.ptf --cpu-port 255 --device-id 1 \
-	--grpc-addr 127.0.0.1:28000 \
+	--grpc-addr $(GRPCADDR) \
 	--p4info $(bmv2_p4c_out)/$(1)/bmv2/default/p4info.txt \
 	--bmv2-json $(bmv2_p4c_out)/$(1)/bmv2/default/bmv2.json \
 	--generate-tv \
@@ -40,4 +40,3 @@ ifndef GRPCADDR
 	$(eval GRPCADDR = 127.0.0.1:28000)
 endif
 include ../../tests/ptf/Makefile.profiles
-
