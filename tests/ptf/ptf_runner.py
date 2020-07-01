@@ -123,71 +123,70 @@ def update_config(p4info_path, bmv2_json_path, tofino_bin_path,
         tvutils.add_pipeline_config_operation(tc, request)
         tvutils.write_to_file(tv, os.getcwd(), tv_name)
         return True
-    else:
-        channel = grpc.insecure_channel(grpc_addr)
-        stub = p4runtime_pb2_grpc.P4RuntimeStub(channel)
+    channel = grpc.insecure_channel(grpc_addr)
+    stub = p4runtime_pb2_grpc.P4RuntimeStub(channel)
 
-        info("Sending P4 config")
+    info("Sending P4 config")
 
-        # Send master arbitration via stream channel
-        # This should go in library, to be re-used also by base_test.py.
-        stream_out_q = Queue.Queue()
-        stream_in_q = Queue.Queue()
+    # Send master arbitration via stream channel
+    # This should go in library, to be re-used also by base_test.py.
+    stream_out_q = Queue.Queue()
+    stream_in_q = Queue.Queue()
 
-        def stream_req_iterator():
-            while True:
-                p = stream_out_q.get()
-                if p is None:
-                    break
-                yield p
+    def stream_req_iterator():
+        while True:
+            p = stream_out_q.get()
+            if p is None:
+                break
+            yield p
 
-        def stream_recv(stream):
-            for p in stream:
-                stream_in_q.put(p)
+    def stream_recv(stream):
+        for p in stream:
+            stream_in_q.put(p)
 
-        def get_stream_packet(type_, timeout=1):
-            start = time.time()
-            try:
-                while True:
-                    remaining = timeout - (time.time() - start)
-                    if remaining < 0:
-                        break
-                    msg = stream_in_q.get(timeout=remaining)
-                    if not msg.HasField(type_):
-                        continue
-                    return msg
-            except:  # timeout expired
-                pass
-            return None
-
-        stream = stub.StreamChannel(stream_req_iterator())
-        stream_recv_thread = threading.Thread(target=stream_recv, args=(stream,))
-        stream_recv_thread.start()
-
-        req = p4runtime_pb2.StreamMessageRequest()
-        arbitration = req.arbitration
-        arbitration.device_id = device_id
-        election_id = arbitration.election_id
-        election_id.high = 0
-        election_id.low = 1
-        stream_out_q.put(req)
-
-        rep = get_stream_packet("arbitration", timeout=5)
-        if rep is None:
-            error("Failed to establish handshake")
-            return False
-
+    def get_stream_packet(type_, timeout=1):
+        start = time.time()
         try:
-            try:
-                stub.SetForwardingPipelineConfig(request)
-            except Exception as e:
-                error("Error during SetForwardingPipelineConfig")
-                error(str(e))
-                return False
-            return True
-        finally:
-            stream_out_q.put(None)
-            stream_recv_thread.join()
+            while True:
+                remaining = timeout - (time.time() - start)
+                if remaining < 0:
+                    break
+                msg = stream_in_q.get(timeout=remaining)
+                if not msg.HasField(type_):
+                    continue
+                return msg
+        except:  # timeout expired
+            pass
+        return None
+
+    stream = stub.StreamChannel(stream_req_iterator())
+    stream_recv_thread = threading.Thread(target=stream_recv, args=(stream,))
+    stream_recv_thread.start()
+
+    req = p4runtime_pb2.StreamMessageRequest()
+    arbitration = req.arbitration
+    arbitration.device_id = device_id
+    election_id = arbitration.election_id
+    election_id.high = 0
+    election_id.low = 1
+    stream_out_q.put(req)
+
+    rep = get_stream_packet("arbitration", timeout=5)
+    if rep is None:
+        error("Failed to establish handshake")
+        return False
+
+    try:
+        try:
+            stub.SetForwardingPipelineConfig(request)
+        except Exception as e:
+            error("Error during SetForwardingPipelineConfig")
+            error(str(e))
+            return False
+        return True
+    finally:
+        stream_out_q.put(None)
+        stream_recv_thread.join()
 
 
 def run_test(p4info_path, grpc_addr, device_id, cpu_port, ptfdir, port_map_path,
@@ -200,10 +199,11 @@ def run_test(p4info_path, grpc_addr, device_id, cpu_port, ptfdir, port_map_path,
     # "ptf_port" is ignored for now, we assume that ports are provided by
     # increasing values of ptf_port, in the range [0, NUM_IFACES[.
     port_map = OrderedDict()
-    interfaces = ""
     with open(port_map_path, 'r') as port_map_f:
         port_list = json.load(port_map_f)
         if generate_tv:
+            # interfaces string to be used to create interfaces in test runner container
+            interfaces = ""
             # Create new portmap proto object for testvectors
             tv_portmap = pmutils.get_new_portmap()
         for entry in port_list:
@@ -211,10 +211,14 @@ def run_test(p4info_path, grpc_addr, device_id, cpu_port, ptfdir, port_map_path,
             iface_name = entry["iface_name"]
             port_map[p4_port] = iface_name
             if generate_tv:
-                # Append new entry to tv proto object
+                # Append iface_name to interfaces
                 interfaces = interfaces + " " + iface_name
+                # Append new entry to tv proto object
                 pmutils.add_new_entry(tv_portmap, p4_port, iface_name)
     if generate_tv:
+        # ptf needs the interfaces mentioned in portmap to be running on container
+        # For generate_tv option, we don't strat bmv2 or tofino model container
+        # This is a work around to create those interfaces on testrunner contiainer
         try:
             cmd = os.getcwd() + "/../../run/tv/setup_interfaces.sh" + interfaces
             p = subprocess.Popen([cmd], shell=True)

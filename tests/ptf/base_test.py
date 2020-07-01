@@ -225,7 +225,7 @@ class P4RuntimeTest(BaseTest):
         self.election_id = 1
         if testutils.test_param_get("generate_tv") == 'True':
             self.generate_tv = True
-        else: 
+        else:
             self.generate_tv = False
         if self.generate_tv:
             self.tv_list = []
