@@ -29,7 +29,7 @@ be executed by installing the following dependencies:
 * make
 * Bash-like Unix shell
 
-## Steps to tun tests on stratum_bmv2
+## Steps to run tests on stratum_bmv2
 
 `stratum_bmv2` is a version of [BMv2's simple_switch][bmv2] (the reference P4
 software switch) built with Stratum support to expose a P4Runtime interface that

@@ -561,7 +561,7 @@ class FabricDefaultVlanPacketInTest(FabricTest):
         for port in [self.port1, self.port2]:
             self.send_packet(port, str(pkt))
             self.verify_packet_in(pkt, port)
-        testutils.verify_no_other_packets(self)
+        self.verify_no_other_packets()
 
 
 @group("spgw")

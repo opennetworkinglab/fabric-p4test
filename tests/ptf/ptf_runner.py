@@ -87,108 +87,111 @@ def build_tofino_config(prog_name, bin_path, cxt_json_path):
 
 
 def update_config(p4info_path, bmv2_json_path, tofino_bin_path,
-                  tofino_cxt_json_path, grpc_addr, device_id):
+                  tofino_cxt_json_path, grpc_addr, device_id, generate_tv=False):
     """
     Performs a SetForwardingPipelineConfig on the device
     """
-    channel = grpc.insecure_channel(grpc_addr)
-    stub = p4runtime_pb2_grpc.P4RuntimeStub(channel)
-
-    # Create new target proto object for testvectors
-    if bmv2_json_path is not None:
-        tv_target = targetutils.get_new_target(grpc_addr, target_id="bmv2")
-    else:
-        tv_target = targetutils.get_new_target(grpc_addr, target_id="tofino")
-    # Write the target proto object to testvectors/target.pb.txt
-    targetutils.write_to_file(tv_target, os.getcwd())
-
-    info("Sending P4 config")
-
-    # Send master arbitration via stream channel
-    # This should go in library, to be re-used also by base_test.py.
-    stream_out_q = Queue.Queue()
-    stream_in_q = Queue.Queue()
-
-    def stream_req_iterator():
-        while True:
-            p = stream_out_q.get()
-            if p is None:
-                break
-            yield p
-
-    def stream_recv(stream):
-        for p in stream:
-            stream_in_q.put(p)
-
-    def get_stream_packet(type_, timeout=1):
-        start = time.time()
-        try:
-            while True:
-                remaining = timeout - (time.time() - start)
-                if remaining < 0:
-                    break
-                msg = stream_in_q.get(timeout=remaining)
-                if not msg.HasField(type_):
-                    continue
-                return msg
-        except:  # timeout expired
-            pass
-        return None
-
-    stream = stub.StreamChannel(stream_req_iterator())
-    stream_recv_thread = threading.Thread(target=stream_recv, args=(stream,))
-    stream_recv_thread.start()
-
-    req = p4runtime_pb2.StreamMessageRequest()
-    arbitration = req.arbitration
-    arbitration.device_id = device_id
-    election_id = arbitration.election_id
+    # Build pipeline config request
+    request = p4runtime_pb2.SetForwardingPipelineConfigRequest()
+    request.device_id = device_id
+    election_id = request.election_id
     election_id.high = 0
     election_id.low = 1
-    stream_out_q.put(req)
+    config = request.config
+    with open(p4info_path, 'r') as p4info_f:
+        google.protobuf.text_format.Merge(p4info_f.read(), config.p4info)
+    if bmv2_json_path is not None:
+        device_config = build_bmv2_config(bmv2_json_path)
+    else:
+        device_config = build_tofino_config("name", tofino_bin_path,
+                                            tofino_cxt_json_path)
+    config.p4_device_config = device_config
+    request.action = p4runtime_pb2.SetForwardingPipelineConfigRequest.VERIFY_AND_COMMIT
 
-    rep = get_stream_packet("arbitration", timeout=5)
-    if rep is None:
-        error("Failed to establish handshake")
-        return False
-
-    try:
-        # Set pipeline config.
-        request = p4runtime_pb2.SetForwardingPipelineConfigRequest()
-        request.device_id = device_id
-        election_id = request.election_id
-        election_id.high = 0
-        election_id.low = 1
-        config = request.config
-        with open(p4info_path, 'r') as p4info_f:
-            google.protobuf.text_format.Merge(p4info_f.read(), config.p4info)
+    if generate_tv:
+        # Create new target proto object for testvectors
         if bmv2_json_path is not None:
-            device_config = build_bmv2_config(bmv2_json_path)
+            tv_target = targetutils.get_new_target(grpc_addr, target_id="bmv2")
         else:
-            device_config = build_tofino_config("name", tofino_bin_path,
-                                                tofino_cxt_json_path)
-        config.p4_device_config = device_config
-        request.action = p4runtime_pb2.SetForwardingPipelineConfigRequest.VERIFY_AND_COMMIT
+            tv_target = targetutils.get_new_target(grpc_addr, target_id="tofino")
+        # Write the target proto object to testvectors/target.pb.txt
+        targetutils.write_to_file(tv_target, os.getcwd())
         # Create new testvector for set pipeline config and write to testvectors/PipelineConfig.pb.txt
         tv = tvutils.get_new_testvector()
         tv_name = "PipelineConfig"
         tc = tvutils.get_new_testcase(tv, tv_name)
         tvutils.add_pipeline_config_operation(tc, request)
         tvutils.write_to_file(tv, os.getcwd(), tv_name)
-        try:
-            stub.SetForwardingPipelineConfig(request)
-        except Exception as e:
-            error("Error during SetForwardingPipelineConfig")
-            error(str(e))
-            return False
         return True
-    finally:
-        stream_out_q.put(None)
-        stream_recv_thread.join()
+    else:
+        channel = grpc.insecure_channel(grpc_addr)
+        stub = p4runtime_pb2_grpc.P4RuntimeStub(channel)
+
+        info("Sending P4 config")
+
+        # Send master arbitration via stream channel
+        # This should go in library, to be re-used also by base_test.py.
+        stream_out_q = Queue.Queue()
+        stream_in_q = Queue.Queue()
+
+        def stream_req_iterator():
+            while True:
+                p = stream_out_q.get()
+                if p is None:
+                    break
+                yield p
+
+        def stream_recv(stream):
+            for p in stream:
+                stream_in_q.put(p)
+
+        def get_stream_packet(type_, timeout=1):
+            start = time.time()
+            try:
+                while True:
+                    remaining = timeout - (time.time() - start)
+                    if remaining < 0:
+                        break
+                    msg = stream_in_q.get(timeout=remaining)
+                    if not msg.HasField(type_):
+                        continue
+                    return msg
+            except:  # timeout expired
+                pass
+            return None
+
+        stream = stub.StreamChannel(stream_req_iterator())
+        stream_recv_thread = threading.Thread(target=stream_recv, args=(stream,))
+        stream_recv_thread.start()
+
+        req = p4runtime_pb2.StreamMessageRequest()
+        arbitration = req.arbitration
+        arbitration.device_id = device_id
+        election_id = arbitration.election_id
+        election_id.high = 0
+        election_id.low = 1
+        stream_out_q.put(req)
+
+        rep = get_stream_packet("arbitration", timeout=5)
+        if rep is None:
+            error("Failed to establish handshake")
+            return False
+
+        try:
+            try:
+                stub.SetForwardingPipelineConfig(request)
+            except Exception as e:
+                error("Error during SetForwardingPipelineConfig")
+                error(str(e))
+                return False
+            return True
+        finally:
+            stream_out_q.put(None)
+            stream_recv_thread.join()
 
 
 def run_test(p4info_path, grpc_addr, device_id, cpu_port, ptfdir, port_map_path,
-             device, platform=None, extra_args=()):
+             device, platform=None, generate_tv=False, extra_args=()):
     """
     Runs PTF tests included in provided directory.
     Device must be running and configfured with appropriate P4 program.
@@ -197,21 +200,33 @@ def run_test(p4info_path, grpc_addr, device_id, cpu_port, ptfdir, port_map_path,
     # "ptf_port" is ignored for now, we assume that ports are provided by
     # increasing values of ptf_port, in the range [0, NUM_IFACES[.
     port_map = OrderedDict()
+    interfaces = ""
     with open(port_map_path, 'r') as port_map_f:
         port_list = json.load(port_map_f)
-        # Create new portmap proto object for testvectors
-        tv_portmap = pmutils.get_new_portmap()
+        if generate_tv:
+            # Create new portmap proto object for testvectors
+            tv_portmap = pmutils.get_new_portmap()
         for entry in port_list:
             p4_port = entry["p4_port"]
             iface_name = entry["iface_name"]
             port_map[p4_port] = iface_name
-            # Append new entry to tv proto object
-            pmutils.add_new_entry(tv_portmap, p4_port, iface_name)
+            if generate_tv:
+                # Append new entry to tv proto object
+                interfaces = interfaces + " " + iface_name
+                pmutils.add_new_entry(tv_portmap, p4_port, iface_name)
+    if generate_tv:
+        try:
+            cmd = os.getcwd() + "/../../run/tv/setup_interfaces.sh" + interfaces
+            p = subprocess.Popen([cmd], shell=True)
+            p.wait()
+        except Exception as e:
+            print e
+            error("Error when creating interfaces")
+            return False
+        # Write the portmap proto object to testvectors/portmap.pb.txt
+        pmutils.write_to_file(tv_portmap, os.getcwd())
 
-    # Write the portmap proto object to testvectors/portmap.pb.txt
-    pmutils.write_to_file(tv_portmap, os.getcwd())
-
-    if not check_ifaces(port_map.values()):
+    if not generate_tv and not check_ifaces(port_map.values()):
         error("Some interfaces are missing")
         return False
 
@@ -233,6 +248,7 @@ def run_test(p4info_path, grpc_addr, device_id, cpu_port, ptfdir, port_map_path,
     test_params += ';device_id=\'{}\''.format(device_id)
     test_params += ';cpu_port=\'{}\''.format(cpu_port)
     test_params += ';device=\'{}\''.format(device)
+    test_params += ';generate_tv=\'{}\''.format(generate_tv)
     if platform is not None:
         test_params += ';pltfm=\'{}\''.format(platform)
     cmd.append('--test-params={}'.format(test_params))
@@ -305,6 +321,9 @@ def main():
     parser.add_argument('--skip-test',
                         help='Skip test execution (useful to perform only pipeline configuration)',
                         action="store_true", default=False)
+    parser.add_argument('--generate-tv',
+                        help='Skip test execution (useful to perform only pipeline configuration)',
+                        action="store_true", default=False)
     args, unknown_args = parser.parse_known_args()
 
     if not check_ptf():
@@ -339,14 +358,14 @@ def main():
         sys.exit(1)
 
     success = True
-
     if not args.skip_config:
         success = update_config(p4info_path=args.p4info,
                                 bmv2_json_path=bmv2_json,
                                 tofino_bin_path=tofino_bin,
                                 tofino_cxt_json_path=tofino_ctx_json,
                                 grpc_addr=args.grpc_addr,
-                                device_id=args.device_id)
+                                device_id=args.device_id,
+                                generate_tv=args.generate_tv)
     if not success:
         sys.exit(2)
 
@@ -359,6 +378,7 @@ def main():
                            port_map_path=args.port_map,
                            platform=args.platform,
                            device=device,
+                           generate_tv=args.generate_tv,
                            extra_args=unknown_args)
 
     if not success:
