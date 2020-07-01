@@ -322,7 +322,7 @@ def main():
                         help='Skip test execution (useful to perform only pipeline configuration)',
                         action="store_true", default=False)
     parser.add_argument('--generate-tv',
-                        help='Skip test execution (useful to perform only pipeline configuration)',
+                        help='Skip test execution',
                         action="store_true", default=False)
     args, unknown_args = parser.parse_known_args()
 
