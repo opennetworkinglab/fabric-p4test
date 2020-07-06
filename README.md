@@ -253,7 +253,7 @@ TestVectors can be generated for bmv2 and tofino targets. The instructions are s
     ./run/tv/run fabric
     ```
 
-    To run a specific test case against a specific fabric profile,
+    To generate a specific test case for a specific fabric profile,
     for example `test.FabricBridgingTest` for the `fabric-spgw` profile:
 
     ```
