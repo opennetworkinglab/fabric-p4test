@@ -14,7 +14,7 @@ env:
     - PROFILES=all
     - ONOS_ROOT=/tmp/onos
     - FABRIC_TOFINO=/tmp/fabric-tofino
-    - TOFINO_PROFILE=fabric
+    - FABRIC_PROFILE=fabric
 
 jobs:
   include:
@@ -28,9 +28,9 @@ jobs:
       script:
         - git clone https://github.com/opencord/fabric-tofino /tmp/fabric-tofino
         # Generating fabric TestVectors for tofino
-        - ./run/tv/run $TOFINO_PROFILE
-        # Generating all TestVectors for bmv2 with all parameters 
-        - ./run/tv/run $PROFILES DEVICE=bmv2 PORTMAP=port_map.veth.json GRPCADDR=localhost:28000 CPUPORT=255
+        - ./run/tv/run $FABRIC_PROFILE
+        # Generating fabric TestVectors for bmv2 with all parameters 
+        - ./run/tv/run $FABRIC_PROFILE DEVICE=bmv2 PORTMAP=port_map.veth.json GRPCADDR=localhost:28000 CPUPORT=255
     - stage: checkstyle
       name: "Checkstyle"
       install: skip
