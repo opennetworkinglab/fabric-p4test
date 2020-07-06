@@ -184,9 +184,82 @@ to generate protobuf-based [TestVectors] (TVs) (under `tests/ptf/testvectors`).
 The long-term goal is to remove all PTF references from the codebase, but
 continue using Python as a convenient way to generate TVs. For now, we use a
 Python library (`tvutils`) to wrap PTF and P4Runtime calls in methods that
-generate TV's actions, stimuli and expectations before calling the
+generate TV's actions, stimuli and expectations instead of calling the
 corresponding PTF or P4Runtime gRPC methods.
 
+### Steps to generate TestVectors
+
+TestVectors can be generated for bmv2 and tofino targets. The instructions are similar to running ptf tests on bmv2 and tofino model.
+
+1. Obtain the `fabric.p4` pre-compiled artifacts for BMv2 (`bmv2.json` and
+   `p4info.txt`). These files are distributed with ONOS:
+
+    ```
+    git clone https://github.com/opennetworkinglab/onos
+    ```
+
+2. Set the `ONOS_ROOT` environment variable to the location where you just
+   cloned the ONOS repo:
+
+    ```
+    export ONOS_ROOT=<path-to-onos>
+    ```
+
+3. Clone `fabric-tofino` repo and follow instructions to compile fabric.p4 for
+   Tofino:
+
+   ```
+   https://github.com/opencord/fabric-tofino.git
+   cd fabric-tofino
+   <open README and follow instructions>
+   ```
+
+4. Set the `FABRIC_TOFINO` environment variable to the location where you cloned
+   `fabric-tofino`:
+
+   ```
+   export FABRIC_TOFINO=<path-to-fabric-tofino>
+   ```
+
+5. Set the optional `SDE_VERSION` environment variable. Default value is `9.0.0`
+   
+   ```
+   export SDE_VERSION=9.0.0
+   ```
+
+6. Generate TestVectors using the `run/tv/run` script:
+
+    ```
+    ./run/tv/run <profile> [device] [portmap] [grpcaddr] [cpuport] [test-case]
+    ```
+   Default values for optional arguments are:
+   1. `device`: `tofino`
+   2. `portmap`: `portmap.veth.json`
+   3. `grpcaddr`: `127.0.0.1:28000`
+   4. `cpuport`: `320` for tofino and `255` for bmv2
+   
+   Example command with all the optional arguments set:
+
+   ```
+   ./run/tv/run fabric DEVICE=tofino PORTMAP=port_map.hw.json GRPCADDR=10.128.13.111:28000 CPUPORT=320 TEST=test.FabricBridgingTest
+   ```
+
+    **NOTE:** Testing `all` profiles is not supported on this target. You must
+    execute the run command for each profile.
+
+    To run all test cases for the basic `fabric` profile:
+
+    ```
+    ./run/tv/run fabric
+    ```
+
+    To run a specific test case against a specific fabric profile,
+    for example `test.FabricBridgingTest` for the `fabric-spgw` profile:
+
+    ```
+    ./run/tv/run fabric-spgw TEST=test.FabricBridgingTest
+    ```
+  
 ## Support
 
 For help running the tests please write to the P4 Brigade
