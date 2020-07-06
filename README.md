@@ -247,7 +247,7 @@ TestVectors can be generated for bmv2 and tofino targets. The instructions are s
     **NOTE:** Testing `all` profiles is not supported on this target. You must
     execute the run command for each profile.
 
-    To run all test cases for the basic `fabric` profile:
+    To generate TestVectors for the basic `fabric` profile:
 
     ```
     ./run/tv/run fabric
