@@ -682,7 +682,7 @@ class ArpBroadcastTest(FabricTest):
             verify_untagged_ports.discard(inport)
             for uport in verify_untagged_ports:
                 self.verify_packet(arp_pkt, uport)
-        testutils.verify_no_other_packets(self)
+        self.verify_no_other_packets()
 
 
 class IPv4UnicastTest(FabricTest):
@@ -783,7 +783,7 @@ class IPv4UnicastTest(FabricTest):
 
         if verify_pkt:
             self.verify_packet(exp_pkt, self.port2)
-        testutils.verify_no_other_packets(self)
+        self.verify_no_other_packets()
 
 
 class DoubleVlanTerminationTest(FabricTest):
@@ -865,7 +865,7 @@ class DoubleVlanTerminationTest(FabricTest):
         testutils.send_packet(self, self.port1, str(pkt))
         if verify_pkt:
             testutils.verify_packet(self, exp_pkt, self.port2)
-        testutils.verify_no_other_packets(self)
+        self.verify_no_other_packets()
 
     def runPopAndRouteTest(self, pkt, next_hop_mac,
                            prefix_len=24,
@@ -966,7 +966,7 @@ class DoubleVlanTerminationTest(FabricTest):
         testutils.send_packet(self, self.port1, str(pkt))
         if verify_pkt:
             testutils.verify_packet(self, exp_pkt, self.port2)
-        testutils.verify_no_other_packets(self)
+        self.verify_no_other_packets()
 
 
 class MplsSegmentRoutingTest(FabricTest):
@@ -1014,7 +1014,7 @@ class PacketOutTest(FabricTest):
     def runPacketOutTest(self, pkt):
         for port in [self.port1, self.port2]:
             self.verify_packet_out(pkt, out_port=port)
-        testutils.verify_no_other_packets(self)
+        self.verify_no_other_packets()
 
 
 class PacketInTest(FabricTest):
@@ -1027,7 +1027,7 @@ class PacketInTest(FabricTest):
                 self.set_ingress_port_vlan(port, False, 0, vlan_id)
             self.send_packet(port, str(pkt))
             self.verify_packet_in(pkt, port)
-        testutils.verify_no_other_packets(self)
+        self.verify_no_other_packets()
 
 
 class SpgwSimpleTest(IPv4UnicastTest):
@@ -1647,7 +1647,7 @@ class PppoeTest(DoubleVlanTerminationTest):
 
         testutils.send_packet(self, self.port1, str(pppoed_pkt))
         self.verify_packet_in(pppoed_pkt, self.port1)
-        testutils.verify_no_other_packets(self)
+        self.verify_no_other_packets()
 
         if not self.is_bmv2():
             time.sleep(1)
@@ -1672,7 +1672,7 @@ class PppoeTest(DoubleVlanTerminationTest):
         pppoed_pkt = pkt_add_vlan(pppoed_pkt, vlan_vid=vlan_id_outer)
 
         self.verify_packet_out(pppoed_pkt, self.port1)
-        testutils.verify_no_other_packets(self)
+        self.verify_no_other_packets()
 
     def runDownstreamV4Test(self, pkt, in_tagged, line_enabled):
         s_tag = vlan_id_outer = 888
