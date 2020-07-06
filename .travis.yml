@@ -26,6 +26,7 @@ jobs:
     - stage: tv
       name: "Generate TestVectors for tofino and bmv2"
       script:
+        - git clone --depth 1 https://github.com/opennetworkinglab/onos /tmp/onos -b $ONOS_BRANCH
         - git clone https://github.com/opencord/fabric-tofino /tmp/fabric-tofino
         # Generating fabric TestVectors for tofino
         - ./run/tv/run $FABRIC_PROFILE
