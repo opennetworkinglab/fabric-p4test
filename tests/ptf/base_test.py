@@ -577,6 +577,8 @@ class P4RuntimeTest(BaseTest):
     def write_request(self, req, store=True):
         if self.generate_tv:
             tvutils.add_write_operation(self.tc, req)
+            if store:
+                self.reqs.append(req)
             return None
         else:
             rep = self._write(req)
