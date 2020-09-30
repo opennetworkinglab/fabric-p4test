@@ -567,7 +567,7 @@ class FabricDefaultVlanPacketInTest(FabricTest):
 @group("spgw")
 class SpgwDownlinkTest(SpgwSimpleTest):
     @autocleanup
-    def doRunTest(self, pkt, tagged1, tagged2, mpls, tc_name):
+    def doRunTest(self, pkt, tagged1, tagged2, mpls):
         self.runDownlinkTest(pkt=pkt, tagged1=tagged1,
                              tagged2=tagged2, mpls=mpls)
 
@@ -578,15 +578,14 @@ class SpgwDownlinkTest(SpgwSimpleTest):
                 for mpls in [False, True]:
                     if mpls and tagged[1]:
                         continue
-                    tc_name = "VLAN_" + vlan_conf + "_" + pkt_type + "_mpls_" + str(mpls)
                     print "Testing VLAN=%s, pkt=%s, mpls=%s..." \
                           % (vlan_conf, pkt_type, mpls)
                     pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
                         eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
-                        ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4,
+                        ip_src=HOST1_IPV4, ip_dst=UE_IPV4,
                         pktlen=MIN_PKT_LEN
                     )
-                    self.doRunTest(pkt, tagged[0], tagged[1], mpls, tc_name=tc_name)
+                    self.doRunTest(pkt, tagged[0], tagged[1], mpls)
 
 
 @group("spgw")
@@ -608,6 +607,60 @@ class SpgwUplinkTest(SpgwSimpleTest):
                     pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
                         eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
                         ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4,
+                        pktlen=MIN_PKT_LEN
+                    )
+                    self.doRunTest(pkt, tagged[0], tagged[1], mpls)
+
+
+@group("spgw")
+class FabricSpgwDownlinkToDbufTest(SpgwSimpleTest):
+    """ Tests downlink packets arriving from the PDN being routed to
+        the dbuf device for buffering.
+    """
+    @autocleanup
+    def doRunTest(self, pkt, tagged1, tagged2, mpls):
+        self.runDownlinkToDbufTest(pkt=pkt, tagged1=tagged1,
+                                   tagged2=tagged2, mpls=mpls)
+
+    def runTest(self):
+        print ""
+        for vlan_conf, tagged in vlan_confs.items():
+            for pkt_type in ["tcp", "udp", "icmp"]:
+                for mpls in [False, True]:
+                    if mpls and tagged[1]:
+                        continue
+                    print "Testing VLAN=%s, pkt=%s, mpls=%s..." \
+                          % (vlan_conf, pkt_type, mpls)
+                    pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
+                        eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
+                        ip_src=HOST1_IPV4, ip_dst=UE_IPV4,
+                        pktlen=MIN_PKT_LEN
+                    )
+                    self.doRunTest(pkt, tagged[0], tagged[1], mpls)
+
+
+@group("spgw")
+class FabricSpgwDownlinkFromDbufTest(SpgwSimpleTest):
+    """ Tests downlink packets being drained from the dbuf buffering device back
+        into the switch to be tunneled to the enodeb.
+    """
+    @autocleanup
+    def doRunTest(self, pkt, tagged1, tagged2, mpls):
+        self.runDownlinkFromDbufTest(pkt=pkt, tagged1=tagged1,
+                                     tagged2=tagged2, mpls=mpls)
+
+    def runTest(self):
+        print ""
+        for vlan_conf, tagged in vlan_confs.items():
+            for pkt_type in ["tcp", "udp", "icmp"]:
+                for mpls in [False, True]:
+                    if mpls and tagged[1]:
+                        continue
+                    print "Testing VLAN=%s, pkt=%s, mpls=%s..." \
+                          % (vlan_conf, pkt_type, mpls)
+                    pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
+                        eth_src=DBUF_MAC, eth_dst=SWITCH_MAC,
+                        ip_src=HOST1_IPV4, ip_dst=UE_IPV4,
                         pktlen=MIN_PKT_LEN
                     )
                     self.doRunTest(pkt, tagged[0], tagged[1], mpls)
