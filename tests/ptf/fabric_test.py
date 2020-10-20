@@ -43,7 +43,7 @@ DEFAULT_MPLS_TTL = 64
 MIN_PKT_LEN = 80
 
 UDP_GTP_PORT = 2152
-DEFAULT_GTP_TUNNEL_SPORT = 1234 # arbitrary, but different from 2152
+DEFAULT_GTP_TUNNEL_SPORT = 1234  # arbitrary, but different from 2152
 
 ETH_TYPE_ARP = 0x0806
 ETH_TYPE_IPV4 = 0x0800
@@ -101,7 +101,7 @@ DEFAULT_VLAN = 4094
 MPLS_LABEL_1 = 100
 MPLS_LABEL_2 = 200
 
-UPLINK_TEID   = 0xeeffc0f0
+UPLINK_TEID = 0xeeffc0f0
 DOWNLINK_TEID = 0xeeffc0f1
 UPLINK_PDR_CTR_ID = 1
 DOWNLINK_PDR_CTR_ID = 2
@@ -216,6 +216,7 @@ def pkt_add_mpls(pkt, label, ttl, cos=0, s=1):
     return Ether(src=pkt[Ether].src, dst=pkt[Ether].dst) / \
            MPLS(label=label, cos=cos, s=s, ttl=ttl) / \
            pkt[Ether].payload
+
 
 def pkt_add_gtp(pkt, out_ipv4_src, out_ipv4_dst, teid,
                 sport=DEFAULT_GTP_TUNNEL_SPORT, dport=UDP_GTP_PORT):
@@ -1077,33 +1078,32 @@ class SpgwSimpleTest(IPv4UnicastTest):
         )
         self.write_request(req)
 
-
     def add_ue_pool(self, pool_addr, prefix_len=32):
         self._add_spgw_iface(
-                iface_addr = pool_addr,
-                prefix_len = prefix_len,
-                iface_enum = SPGW_IFACE_CORE,
-                dir_enum = SPGW_DIRECTION_DOWNLINK,
-                gtpu_valid = False)
+                iface_addr=pool_addr,
+                prefix_len=prefix_len,
+                iface_enum=SPGW_IFACE_CORE,
+                dir_enum=SPGW_DIRECTION_DOWNLINK,
+                gtpu_valid=False)
 
     def add_s1u_iface(self, s1u_addr, prefix_len=32):
         self._add_spgw_iface(
-                iface_addr = s1u_addr,
-                prefix_len = prefix_len,
-                iface_enum = SPGW_IFACE_ACCESS,
-                dir_enum = SPGW_DIRECTION_DOWNLINK,
-                gtpu_valid = True)
+                iface_addr=s1u_addr,
+                prefix_len=prefix_len,
+                iface_enum=SPGW_IFACE_ACCESS,
+                dir_enum=SPGW_DIRECTION_DOWNLINK,
+                gtpu_valid=True)
 
     def add_dbuf_device(self,
                         dbuf_addr=DBUF_IPV4, drain_dst_addr=DBUF_DRAIN_DST_IPV4,
                         dbuf_far_id=DBUF_FAR_ID, dbuf_teid=DBUF_TEID):
         # Switch interface for traffic to/from dbuf device
         self._add_spgw_iface(
-                iface_addr = drain_dst_addr,
-                prefix_len = 32,
-                iface_enum = SPGW_IFACE_FROM_DBUF,
-                dir_enum = SPGW_DIRECTION_DOWNLINK,
-                gtpu_valid = True)
+                iface_addr=drain_dst_addr,
+                prefix_len=32,
+                iface_enum=SPGW_IFACE_FROM_DBUF,
+                dir_enum=SPGW_DIRECTION_DOWNLINK,
+                gtpu_valid=True)
 
         # FAR that tunnels to the dbuf device
         return self._add_far(
