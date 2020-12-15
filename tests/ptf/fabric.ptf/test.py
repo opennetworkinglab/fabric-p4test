@@ -156,8 +156,8 @@ class FabricIPv4UnicastGroupTest(FabricTest):
             (self.port3, SWITCH_MAC, HOST3_MAC),
         ]
         self.add_next_routing_group(300, grp_id, mbrs)
-        self.set_egress_vlan_pop(self.port2, vlan_id)
-        self.set_egress_vlan_pop(self.port3, vlan_id)
+        self.set_egress_vlan(self.port2, vlan_id, False)
+        self.set_egress_vlan(self.port3, vlan_id, False)
 
         pkt_from1 = testutils.simple_tcp_packet(
             eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
@@ -190,8 +190,8 @@ class FabricIPv4UnicastGroupTestAllPortTcpSport(FabricTest):
             (self.port3, SWITCH_MAC, HOST3_MAC),
         ]
         self.add_next_routing_group(300, grp_id, mbrs)
-        self.set_egress_vlan_pop(self.port2, vlan_id)
-        self.set_egress_vlan_pop(self.port3, vlan_id)
+        self.set_egress_vlan(self.port2, vlan_id, False)
+        self.set_egress_vlan(self.port3, vlan_id, False)
         # tcpsport_toport list is used to learn the tcp_source_port that
         # causes the packet to be forwarded for each port
         tcpsport_toport = [None, None]
@@ -249,8 +249,8 @@ class FabricIPv4UnicastGroupTestAllPortTcpDport(FabricTest):
             (self.port3, SWITCH_MAC, HOST3_MAC),
         ]
         self.add_next_routing_group(300, grp_id, mbrs)
-        self.set_egress_vlan_pop(self.port2, vlan_id)
-        self.set_egress_vlan_pop(self.port3, vlan_id)
+        self.set_egress_vlan(self.port2, vlan_id, False)
+        self.set_egress_vlan(self.port3, vlan_id, False)
         # tcpdport_toport list is used to learn the tcp_destination_port that
         # causes the packet to be forwarded for each port
         tcpdport_toport = [None, None]
@@ -309,8 +309,8 @@ class FabricIPv4UnicastGroupTestAllPortIpSrc(FabricTest):
             (self.port3, SWITCH_MAC, HOST3_MAC),
         ]
         self.add_next_routing_group(300, grp_id, mbrs)
-        self.set_egress_vlan_pop(self.port2, vlan_id)
-        self.set_egress_vlan_pop(self.port3, vlan_id)
+        self.set_egress_vlan(self.port2, vlan_id, False)
+        self.set_egress_vlan(self.port3, vlan_id, False)
         # ipsource_toport list is used to learn the ip_src that causes the packet
         # to be forwarded for each port
         ipsource_toport = [None, None]
@@ -373,8 +373,8 @@ class FabricIPv4UnicastGroupTestAllPortIpDst(FabricTest):
             (self.port3, SWITCH_MAC, HOST3_MAC),
         ]
         self.add_next_routing_group(300, grp_id, mbrs)
-        self.set_egress_vlan_pop(self.port2, vlan_id)
-        self.set_egress_vlan_pop(self.port3, vlan_id)
+        self.set_egress_vlan(self.port2, vlan_id, False)
+        self.set_egress_vlan(self.port3, vlan_id, False)
         # ipdst_toport list is used to learn the ip_dst that causes the packet
         # to be forwarded for each port
         ipdst_toport = [None, None]
@@ -436,7 +436,7 @@ class FabricIPv4MPLSTest(FabricTest):
         mpls_label = 0xaba
         self.add_next_mpls_routing(
             400, self.port2, SWITCH_MAC, HOST2_MAC, mpls_label)
-        self.set_egress_vlan_pop(self.port2, vlan_id)
+        self.set_egress_vlan(self.port2, vlan_id, False)
 
         pkt_1to2 = testutils.simple_tcp_packet(
             eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,

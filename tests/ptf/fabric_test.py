@@ -295,10 +295,11 @@ class FabricTest(P4RuntimeTest):
         elif tagged:
             self.set_ingress_port_vlan(ingress_port=port_id, vlan_id=vlan_id,
                                        vlan_valid=True)
+            self.set_egress_vlan(egress_port=port_id, vlan_id=vlan_id, push_vlan=True)
         else:
             self.set_ingress_port_vlan(ingress_port=port_id,
                                        vlan_valid=False, internal_vlan_id=vlan_id)
-            self.set_egress_vlan_pop(egress_port=port_id, vlan_id=vlan_id)
+            self.set_egress_vlan(egress_port=port_id, vlan_id=vlan_id, push_vlan=False)
 
     def set_ingress_port_vlan(self, ingress_port,
                               vlan_valid=False,
@@ -328,14 +329,15 @@ class FabricTest(P4RuntimeTest):
             "filtering." + action_name, action_params,
             DEFAULT_PRIORITY)
 
-    def set_egress_vlan_pop(self, egress_port, vlan_id):
+    def set_egress_vlan(self, egress_port, vlan_id, push_vlan=False):
         egress_port = stringify(egress_port, 2)
         vlan_id = stringify(vlan_id, 2)
+        action_name = "push_vlan" if push_vlan else "pop_vlan"
         self.send_request_add_entry_to_action(
             "egress_next.egress_vlan",
             [self.Exact("vlan_id", vlan_id),
              self.Exact("eg_port", egress_port)],
-            "egress_next.pop_vlan", [])
+            "egress_next." + action_name, [])
 
     def set_forwarding_type(self, ingress_port, eth_dstAddr, ethertype=ETH_TYPE_IPV4,
                             fwd_type=FORWARDING_TYPE_UNICAST_IPV4):
@@ -685,8 +687,10 @@ class ArpBroadcastTest(FabricTest):
         self.add_mcast_group(mcast_group_id, all_ports)
         # Add the clone group
         self.add_clone_group(CPU_CLONE_SESSION_ID, [self.cpu_port])
+        for port in tagged_ports:
+            self.set_egress_vlan(port, vlan_id, True)
         for port in untagged_ports:
-            self.set_egress_vlan_pop(port, vlan_id)
+            self.set_egress_vlan(port, vlan_id, False)
 
         for inport in all_ports:
             pkt_to_send = vlan_arp_pkt if inport in tagged_ports else arp_pkt
