@@ -355,9 +355,9 @@ class P4RuntimeTest(BaseTest):
             pkt, port=out_port, do_forwarding=False))
         self.verify_packet(pkt, out_port)
 
-    def verify_no_other_packets(self):
+    def verify_no_other_packets(self, timeout=2):
         if not self.generate_tv:
-            testutils.verify_no_other_packets(self)
+            testutils.verify_no_other_packets(self, timeout=timeout)
 
     def get_stream_packet(self, type_, timeout=1):
         start = time.time()
