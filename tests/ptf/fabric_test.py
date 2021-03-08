@@ -525,9 +525,9 @@ class FabricTest(P4RuntimeTest):
         next_id_ = stringify(next_id, 4)
         vlan_id_ = stringify(new_vlan_id, 2)
         self.send_request_add_entry_to_action(
-            "next.next_vlan",
+            "pre_next.next_vlan",
             [self.Exact("next_id", next_id_)],
-            "next.set_vlan",
+            "pre_next.set_vlan",
             [("vlan_id", vlan_id_)])
 
     def add_next_double_vlan(self, next_id, new_vlan_id, new_inner_vlan_id):
@@ -535,9 +535,9 @@ class FabricTest(P4RuntimeTest):
         vlan_id_ = stringify(new_vlan_id, 2)
         inner_vlan_id_ = stringify(new_inner_vlan_id, 2)
         self.send_request_add_entry_to_action(
-            "next.next_vlan",
+            "pre_next.next_vlan",
             [self.Exact("next_id", next_id_)],
-            "next.set_double_vlan",
+            "pre_next.set_double_vlan",
             [("outer_vlan_id", vlan_id_),
              ("inner_vlan_id", inner_vlan_id_)])
 
@@ -579,43 +579,32 @@ class FabricTest(P4RuntimeTest):
                 ])
         self.add_next_hashed_group_action(next_id, grp_id, actions)
 
-    def add_next_mpls_routing(self, next_id, egress_port, smac, dmac, label):
-        egress_port_ = stringify(egress_port, 2)
-        smac_ = mac_to_binary(smac)
-        dmac_ = mac_to_binary(dmac)
-        label_ = stringify(label, 3)
-        self.add_next_hashed_indirect_action(
-            next_id,
-            "next.mpls_routing_hashed",
-            [("port_num", egress_port_), ("smac", smac_), ("dmac", dmac_),
-             ("label", label_)])
-
-    def add_next_mpls_routing_simple(self, next_id, egress_port, smac, dmac, label):
+    def add_next_mpls(self, next_id, label):
         next_id_ = stringify(next_id, 4)
-        egress_port_ = stringify(egress_port, 2)
-        smac_ = mac_to_binary(smac)
-        dmac_ = mac_to_binary(dmac)
         label_ = stringify(label, 3)
         self.send_request_add_entry_to_action(
-            "next.simple",
+            "pre_next.next_mpls",
             [self.Exact("next_id", next_id_)],
-            "next.mpls_routing_simple",
-            [("port_num", egress_port_), ("smac", smac_), ("dmac", dmac_),
-             ("label", label_)])
+            "pre_next.set_mpls_label",
+            [("label", label_)])
 
     # next_hops is a list of tuples (egress_port, smac, dmac)
     def add_next_mpls_routing_group(self, next_id, grp_id, next_hops=None):
         actions = []
         if next_hops is not None:
-            for (egress_port, smac, dmac, label) in next_hops:
+            mpls_labels = list(map(lambda x: x[3], next_hops))
+            if len(set(mpls_labels)) > 1:
+                self.fail("More than one MPLS label passed to add_next_mpls_routing_group")
+            self.add_next_mpls(next_id, mpls_labels[0])
+
+            for (egress_port, smac, dmac, _) in next_hops:
                 egress_port_ = stringify(egress_port, 2)
                 smac_ = mac_to_binary(smac)
                 dmac_ = mac_to_binary(dmac)
-                label_ = stringify(label, 3)
                 actions.append([
-                    "next.mpls_routing_hashed",
+                    "next.routing_hashed",
                     [("port_num", egress_port_), ("smac", smac_),
-                     ("dmac", dmac_), ("label", label_)]
+                     ("dmac", dmac_)]
                 ])
         self.add_next_hashed_group_action(next_id, grp_id, actions)
 
