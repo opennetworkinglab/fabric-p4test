@@ -590,7 +590,7 @@ class FabricIPv4DoNotRedirectInfraTest(FabricTest):
 
         self.add_next_routing(401, self.port3, SWITCH_MAC, HOST2_MAC)
         self.add_forwarding_acl_next(401, is_edge=True, ipv4_src=HOST1_IPV4,
-            ipv4_dst=HOST2_IPV4, ip_proto=IP_PROTO_TCP)
+                                     ipv4_dst=HOST2_IPV4, ip_proto=IP_PROTO_TCP)
 
         self.send_packet(self.port1, str(pkt_1to2))
         self.verify_packets(exp_pkt_1to2, [self.port2])
