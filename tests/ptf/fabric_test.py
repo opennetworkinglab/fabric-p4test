@@ -70,6 +70,7 @@ BROADCAST_MAC = ":".join(["ff"] * 6)
 MAC_MASK = ":".join(["ff"] * 6)
 SWITCH_MAC = "00:00:00:00:aa:01"
 SWITCH_IPV4 = "192.168.0.1"
+SPINE_MAC = "00:00:00:00:aa:01"
 
 HOST1_MAC = "00:00:00:00:00:01"
 HOST2_MAC = "00:00:00:00:00:02"
@@ -459,12 +460,16 @@ class FabricTest(P4RuntimeTest):
                 DEFAULT_PRIORITY)
 
     def add_forwarding_acl_next(
-        self, next_id, ipv4_src=None, ipv4_dst=None, ip_proto=None,
+        self, next_id, is_edge=None, ipv4_src=None, ipv4_dst=None, ip_proto=None,
         l4_sport=None, l4_dport=None
     ):
         # Send only if the match keys are not empty
         next_id_ = stringify(next_id, 4)
         matches = []
+        if is_edge:
+            is_edge_ = '\x01' if is_edge else '\x00'
+            is_edge_mask = '\x01'
+            matches.append(self.Ternary("port_is_edge", is_edge_, is_edge_mask))
         if ipv4_src:
             ipv4_src_ = ipv4_to_binary(ipv4_src)
             ipv4_src_mask = stringify(0xFFFFFFFF, 4)

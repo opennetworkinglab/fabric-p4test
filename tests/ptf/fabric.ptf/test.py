@@ -496,7 +496,7 @@ class FabricMplsSegmentRoutingTest(MplsSegmentRoutingTest):
                 self.doRunTest(pkt, HOST2_MAC, next_hop_spine, tc_name=tc_name)
 
 
-class FabricIPv4MPLSRedirectTest(FabricTest):
+class FabricIPv4MPLSRedirectEdgeTest(FabricTest):
     @autocleanup
     def runTest(self):
         vlan_id = 10
@@ -505,10 +505,11 @@ class FabricIPv4MPLSRedirectTest(FabricTest):
                                  FORWARDING_TYPE_UNICAST_IPV4)
         self.add_forwarding_routing_v4_entry(HOST2_IPV4, 24, 400)
         mpls_label = 0xaba
+        self.add_next_vlan(400, DEFAULT_VLAN)
         self.add_next_mpls(400, mpls_label)
         self.add_next_routing(400, self.port2, SWITCH_MAC, HOST2_MAC)
-        self.set_egress_vlan(self.port2, vlan_id, False)
-        self.set_egress_vlan(self.port3, vlan_id, False)
+        self.set_egress_vlan(self.port2, DEFAULT_VLAN, False)
+        self.set_egress_vlan(self.port3, DEFAULT_VLAN, False)
 
         pkt_1to2 = testutils.simple_tcp_packet(
             eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
@@ -523,8 +524,8 @@ class FabricIPv4MPLSRedirectTest(FabricTest):
             inner_frame=pkt_1to2[IP:])
 
         self.add_next_routing(401, self.port3, SWITCH_MAC, HOST2_MAC)
-        self.add_forwarding_acl_next(401, ipv4_src=HOST1_IPV4, ipv4_dst=HOST2_IPV4,
-                                     ip_proto=IP_PROTO_TCP)
+        self.add_forwarding_acl_next(401, is_edge=True, ipv4_src=HOST1_IPV4,
+                                     ipv4_dst=HOST2_IPV4, ip_proto=IP_PROTO_TCP)
 
         self.send_packet(self.port1, str(pkt_1to2))
         self.verify_packets(exp_pkt_1to2, [self.port3])
@@ -540,10 +541,11 @@ class FabricIPv4MPLSDoNotRedirectTest(FabricTest):
                                  FORWARDING_TYPE_UNICAST_IPV4)
         self.add_forwarding_routing_v4_entry(HOST2_IPV4, 24, 400)
         mpls_label = 0xaba
+        self.add_next_vlan(400, DEFAULT_VLAN)
         self.add_next_mpls(400, mpls_label)
         self.add_next_routing(400, self.port2, SWITCH_MAC, HOST2_MAC)
-        self.set_egress_vlan(self.port2, vlan_id, False)
-        self.set_egress_vlan(self.port3, vlan_id, False)
+        self.set_egress_vlan(self.port2, DEFAULT_VLAN, False)
+        self.set_egress_vlan(self.port3, DEFAULT_VLAN, False)
 
         pkt_1to2 = testutils.simple_tcp_packet(
             eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
@@ -558,8 +560,37 @@ class FabricIPv4MPLSDoNotRedirectTest(FabricTest):
             inner_frame=pkt_1to2[IP:])
 
         self.add_next_routing(401, self.port3, SWITCH_MAC, HOST2_MAC)
-        self.add_forwarding_acl_next(401, ipv4_src=HOST3_IPV4, ipv4_dst=HOST4_IPV4,
-                                     ip_proto=IP_PROTO_TCP)
+        self.add_forwarding_acl_next(401, is_edge=True, ipv4_src=HOST3_IPV4,
+                                     ipv4_dst=HOST4_IPV4, ip_proto=IP_PROTO_TCP)
+
+        self.send_packet(self.port1, str(pkt_1to2))
+        self.verify_packets(exp_pkt_1to2, [self.port2])
+        self.verify_no_other_packets()
+
+
+class FabricIPv4DoNotRedirectInfraTest(FabricTest):
+    @autocleanup
+    def runTest(self):
+        vlan_id = 10
+        self.set_ingress_port_vlan(self.port1, False, 0, DEFAULT_VLAN)
+        self.set_forwarding_type(self.port1, SWITCH_MAC, 0x800,
+                                 FORWARDING_TYPE_UNICAST_IPV4)
+        self.add_forwarding_routing_v4_entry(HOST2_IPV4, 24, 400)
+        self.add_next_vlan(400, vlan_id)
+        self.add_next_routing(400, self.port2, SWITCH_MAC, HOST2_MAC)
+        self.set_egress_vlan(self.port2, vlan_id, False)
+        self.set_egress_vlan(self.port3, vlan_id, False)
+
+        pkt_1to2 = testutils.simple_tcp_packet(
+            eth_src=SPINE_MAC, eth_dst=SWITCH_MAC,
+            ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4, ip_ttl=64)
+        exp_pkt_1to2 = testutils.simple_tcp_packet(
+            eth_src=SWITCH_MAC, eth_dst=HOST2_MAC,
+            ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4, ip_ttl=63)
+
+        self.add_next_routing(401, self.port3, SWITCH_MAC, HOST2_MAC)
+        self.add_forwarding_acl_next(401, is_edge=True, ipv4_src=HOST1_IPV4,
+            ipv4_dst=HOST2_IPV4, ip_proto=IP_PROTO_TCP)
 
         self.send_packet(self.port1, str(pkt_1to2))
         self.verify_packets(exp_pkt_1to2, [self.port2])
