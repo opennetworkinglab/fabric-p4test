@@ -68,6 +68,7 @@ MAC_MASK = ":".join(["ff"] * 6)
 SWITCH_MAC = "00:00:00:00:aa:01"
 SWITCH_IPV4 = "192.168.0.1"
 
+ZERO_MAC = "00:00:00:00:00:00"
 HOST1_MAC = "00:00:00:00:00:01"
 HOST2_MAC = "00:00:00:00:00:02"
 HOST3_MAC = "00:00:00:00:00:03"
@@ -342,8 +343,6 @@ class FabricTest(P4RuntimeTest):
     def set_forwarding_type(self, ingress_port, eth_dstAddr, ethertype=ETH_TYPE_IPV4,
                             fwd_type=FORWARDING_TYPE_UNICAST_IPV4):
         ingress_port_ = stringify(ingress_port, 2)
-        eth_dstAddr_ = mac_to_binary(eth_dstAddr)
-        eth_mask_ = mac_to_binary(MAC_MASK)
         if ethertype == ETH_TYPE_IPV4:
             ethertype_ = stringify(0, 2)
             ethertype_mask_ = stringify(0, 2)
@@ -358,9 +357,12 @@ class FabricTest(P4RuntimeTest):
             return
         fwd_type_ = stringify(fwd_type, 1)
         matches = [self.Exact("ig_port", ingress_port_),
-                   self.Ternary("eth_dst", eth_dstAddr_, eth_mask_),
                    self.Ternary("eth_type", ethertype_, ethertype_mask_),
                    self.Exact("ip_eth_type", ip_eth_type)]
+        if eth_dstAddr is not None:
+            eth_dstAddr_ = mac_to_binary(eth_dstAddr)
+            eth_mask_ = mac_to_binary(MAC_MASK)
+            matches.append(self.Ternary("eth_dst", eth_dstAddr_, eth_mask_))
         self.send_request_add_entry_to_action(
             "filtering.fwd_classifier",
             matches,
@@ -715,7 +717,7 @@ class IPv4UnicastTest(FabricTest):
                            exp_pkt=None, exp_pkt_base=None, next_id=None,
                            next_vlan=None, mpls=False, dst_ipv4=None,
                            routed_eth_types=(ETH_TYPE_IPV4,),
-                           verify_pkt=True):
+                           verify_pkt=True, from_packet_out=False):
         """
         Execute an IPv4 unicast routing test.
         :param pkt: input packet
@@ -737,11 +739,18 @@ class IPv4UnicastTest(FabricTest):
             classifier table to process packets via routing
         :param verify_pkt: whether packets are expected to be forwarded or
             dropped
+        :param from_packet_out: ingress packet is a packet-out (enables do_forwarding)
         """
         if IP not in pkt or Ether not in pkt:
             self.fail("Cannot do IPv4 test with packet that is not IP")
         if mpls and tagged2:
             self.fail("Cannot do MPLS test with egress port tagged (tagged2)")
+
+        if from_packet_out:
+            ig_port = self.cpu_port
+        else:
+            ig_port = self.port1
+        eg_port = self.port2
 
         # If the input pkt has a VLAN tag, use that to configure tables.
         pkt_is_tagged = False
@@ -749,6 +758,8 @@ class IPv4UnicastTest(FabricTest):
             vlan1 = pkt[Dot1Q].vlan
             tagged1 = True
             pkt_is_tagged = True
+            # packet-outs should arrive be untagged
+            assert not from_packet_out
         else:
             vlan1 = VLAN_ID_1
 
@@ -765,32 +776,40 @@ class IPv4UnicastTest(FabricTest):
         mpls_label = MPLS_LABEL_2
         if dst_ipv4 is None:
             dst_ipv4 = pkt[IP].dst
-        switch_mac = pkt[Ether].dst
+        if from_packet_out:
+            switch_mac = SWITCH_MAC
+        else:
+            switch_mac = pkt[Ether].dst
 
         # Setup ports.
-        self.setup_port(self.port1, vlan1, tagged1)
-        self.setup_port(self.port2, vlan2, tagged2)
+        self.setup_port(ig_port, vlan1, tagged1)
+        self.setup_port(eg_port, vlan2, tagged2)
 
         # Forwarding type -> routing v4
         for eth_type in routed_eth_types:
-            self.set_forwarding_type(self.port1, switch_mac, eth_type,
-                                     FORWARDING_TYPE_UNICAST_IPV4)
+            self.set_forwarding_type(
+                ig_port,
+                switch_mac if not from_packet_out else None,
+                eth_type,
+                FORWARDING_TYPE_UNICAST_IPV4)
 
         # Routing entry.
         self.add_forwarding_routing_v4_entry(dst_ipv4, prefix_len, next_id)
 
         if not mpls:
-            self.add_next_routing(next_id, self.port2, switch_mac, next_hop_mac)
+            self.add_next_routing(next_id, eg_port, switch_mac, next_hop_mac)
             self.add_next_vlan(next_id, vlan2)
         else:
-            params = [self.port2, switch_mac, next_hop_mac, mpls_label]
+            params = [eg_port, switch_mac, next_hop_mac, mpls_label]
             self.add_next_mpls_routing_group(next_id, group_id, [params])
             self.add_next_vlan(next_id, DEFAULT_VLAN)
 
         if exp_pkt is None:
             # Build exp pkt using the input one.
             exp_pkt = pkt.copy() if not exp_pkt_base else exp_pkt_base
-            exp_pkt = pkt_route(exp_pkt, next_hop_mac)
+            # Route
+            exp_pkt[Ether].src = switch_mac
+            exp_pkt[Ether].dst = next_hop_mac
             if not mpls:
                 exp_pkt = pkt_decrement_ttl(exp_pkt)
             if tagged2 and Dot1Q not in exp_pkt:
@@ -802,10 +821,14 @@ class IPv4UnicastTest(FabricTest):
         if tagged1 and not pkt_is_tagged:
             pkt = pkt_add_vlan(pkt, vlan_vid=vlan1)
 
-        self.send_packet(self.port1, str(pkt))
+        if from_packet_out:
+            self.send_packet_out(self.build_packet_out(
+                pkt, port=0, do_forwarding=True))
+        else:
+            self.send_packet(ig_port, str(pkt))
 
         if verify_pkt:
-            self.verify_packet(exp_pkt, self.port2)
+            self.verify_packet(exp_pkt, eg_port)
         self.verify_no_other_packets()
 
 

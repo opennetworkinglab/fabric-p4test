@@ -114,6 +114,29 @@ class FabricIPv4UnicastTest(IPv4UnicastTest):
                 self.doRunTest(pkt, HOST2_MAC, tagged[0], tagged[1], tc_name=tc_name)
 
 
+class FabricIPv4UnicastFromPacketOutTest(IPv4UnicastTest):
+    @autocleanup
+    def doRunTest(self, pkt, mac_dest, tagged2, tc_name):
+        self.runIPv4UnicastTest(
+            pkt, mac_dest, prefix_len=24, tagged1=False, tagged2=tagged2,
+            from_packet_out=True)
+
+    def runTest(self):
+        print ""
+        # Cpu port (ingress) is always considered untagged.
+        for tagged2 in [False, True]:
+            for pkt_type in ["tcp", "udp", "icmp"]:
+                tc_name = pkt_type + "_VLAN_" + str(tagged2)
+                print "Testing %s packet, out-tagged=%s..." \
+                      % (pkt_type, tagged2)
+                pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
+                    eth_src=ZERO_MAC, eth_dst=ZERO_MAC,
+                    ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4,
+                    pktlen=MIN_PKT_LEN
+                )
+                self.doRunTest(pkt, HOST2_MAC, tagged2, tc_name=tc_name)
+
+
 class FabricIPv4DefaultRouteTest(IPv4UnicastTest):
     @autocleanup
     def runTest(self):
