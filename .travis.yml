@@ -10,7 +10,7 @@ python:
 
 env:
   global:
-    - ONOS_BRANCH=onos-2.2
+    - ONOS_BRANCH=onos-2.5
     - PROFILES=all
     - ONOS_ROOT=/tmp/onos
     - FABRIC_TOFINO=/tmp/fabric-tofino
