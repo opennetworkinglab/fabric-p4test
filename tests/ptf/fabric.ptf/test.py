@@ -137,6 +137,26 @@ class FabricIPv4UnicastFromPacketOutTest(IPv4UnicastTest):
                 self.doRunTest(pkt, HOST2_MAC, tagged2, tc_name=tc_name)
 
 
+class FabricGtpEndMarkerPacketOut(IPv4UnicastTest):
+    @autocleanup
+    def doRunTest(self, pkt, mac_dest, tagged2, tc_name):
+        self.runIPv4UnicastTest(
+            pkt, mac_dest, prefix_len=24, tagged1=False, tagged2=tagged2,
+            from_packet_out=True)
+
+    def runTest(self):
+        print ""
+        for tagged2 in [False, True]:
+            tc_name = "VLAN_" + str(tagged2)
+            print "Testing out-tagged=%s..." % (tagged2)
+            # gtp_type=254 -> end marker
+            pkt = Ether(src=ZERO_MAC, dst=ZERO_MAC) / \
+                  IP(src=SWITCH_IPV4, dst=S1U_ENB_IPV4) / \
+                  UDP(sport=UDP_GTP_PORT, dport=UDP_GTP_PORT, chksum=0) / \
+                  GTP(gtp_type=254, teid=1, length=0)
+            self.doRunTest(pkt, HOST2_MAC, tagged2, tc_name=tc_name)
+
+
 class FabricIPv4DefaultRouteTest(IPv4UnicastTest):
     @autocleanup
     def runTest(self):
@@ -159,7 +179,7 @@ class FabricIPv4UnicastGtpTest(IPv4UnicastTest):
         pkt = Ether(src=HOST1_MAC, dst=SWITCH_MAC) / \
               IP(src=HOST3_IPV4, dst=HOST4_IPV4) / \
               UDP(sport=UDP_GTP_PORT, dport=UDP_GTP_PORT) / \
-              GTPU(teid=0xeeffc0f0) / \
+              GTP(teid=0xeeffc0f0) / \
               IP(src=HOST1_IPV4, dst=HOST2_IPV4) / \
               inner_udp
         self.runIPv4UnicastTest(pkt, next_hop_mac=HOST2_MAC)

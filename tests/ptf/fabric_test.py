@@ -151,8 +151,8 @@ PPPOED_CODES = (
 )
 
 
-class GTPU(Packet):
-    name = "GTP-U Header"
+class GTP(Packet):
+    name = "GTP Header"
     fields_desc = [
         BitField("version", 1, 3),
         BitField("PT", 1, 1),
@@ -174,9 +174,9 @@ class GTPU(Packet):
         return pkt
 
 
-# Register our GTPU header with scapy for dissection
-bind_layers(UDP, GTPU, dport=UDP_GTP_PORT)
-bind_layers(GTPU, IP)
+# Register our GTP header with scapy for dissection
+bind_layers(UDP, GTP, dport=UDP_GTP_PORT)
+bind_layers(GTP, IP)
 
 
 def pkt_mac_swap(pkt):
@@ -226,7 +226,7 @@ def pkt_add_gtp(pkt, out_ipv4_src, out_ipv4_dst, teid,
            IP(src=out_ipv4_src, dst=out_ipv4_dst, tos=0,
               id=0x1513, flags=0, frag=0) / \
            UDP(sport=sport, dport=dport, chksum=0) / \
-           GTPU(teid=teid) / \
+           GTP(teid=teid) / \
            payload
 
 
@@ -256,9 +256,9 @@ class FabricTest(P4RuntimeTest):
 
     def setUp(self):
         super(FabricTest, self).setUp()
-        self.port1 = self.swports(1)
-        self.port2 = self.swports(2)
-        self.port3 = self.swports(3)
+        self.port1 = self.swports(0)
+        self.port2 = self.swports(1)
+        self.port3 = self.swports(2)
 
     def setup_int(self):
         self.send_request_add_entry_to_action(
@@ -1400,7 +1400,7 @@ class SpgwSimpleTest(IPv4UnicastTest):
         """ Tests a packet returning from dbuf to be sent to the enodeb.
             Similar to a normal downlink test, but the input is gtpu encapped.
         """
-        # The input packet is from dbuf and is GTPU encapsulated
+        # The input packet is from dbuf and is GTP encapsulated
         pkt_from_dbuf = pkt.copy()
         pkt_from_dbuf[Ether].src = DBUF_MAC
         pkt_from_dbuf[Ether].dst = SWITCH_MAC
