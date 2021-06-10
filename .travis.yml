@@ -24,12 +24,10 @@ jobs:
         - git clone --depth 1 https://github.com/opennetworkinglab/onos /tmp/onos -b $ONOS_BRANCH
         - ./run/bmv2/run $PROFILES
     - stage: tv
-      name: "Generate TestVectors for tofino and bmv2"
+      name: "Generate TestVectors for bmv2"
       script:
         - git clone --depth 1 https://github.com/opennetworkinglab/onos /tmp/onos -b $ONOS_BRANCH
         - git clone https://github.com/opencord/fabric-tofino /tmp/fabric-tofino
-        # Generating fabric TestVectors for tofino
-        - ./run/tv/run $FABRIC_PROFILE
         # Generating fabric TestVectors for bmv2 with all parameters 
         - ./run/tv/run $FABRIC_PROFILE DEVICE=bmv2 PORTMAP=port_map.veth.json GRPCADDR=localhost:28000 CPUPORT=255
     - stage: checkstyle
