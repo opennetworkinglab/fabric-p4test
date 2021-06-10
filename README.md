@@ -169,7 +169,7 @@ the instructions available inside the `tests/ptf` directory.
 
 ## Status
 
-All test cases are executed daily against the ONOS 2.2 LTS branch (`onos-2.2`) using Travis CI.
+All test cases are executed daily against the ONOS 2.5 LTS branch (`onos-2.5`) using Travis CI.
 The current status is:
 
 [![Build Status](https://travis-ci.org/opennetworkinglab/fabric-p4test.svg?branch=master)](https://travis-ci.org/opennetworkinglab/fabric-p4test)
