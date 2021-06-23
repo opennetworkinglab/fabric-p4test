@@ -961,7 +961,7 @@ class DoubleVlanTerminationTest(FabricTest):
         # Setup port 1
         self.setup_port(self.port1, vlan_id=in_vlan, port_type=PORT_TYPE_INFRA, tagged=in_tagged)
         # Setup port 2: packets on this port are double tagged packets
-        self.setup_port(self.port2, vlan_id=next_vlan_id, port_type=PORT_TYPE_INFRA, double_tagged=True, inner_vlan_id=next_inner_vlan_id)
+        self.setup_port(self.port2, vlan_id=next_vlan_id, port_type=PORT_TYPE_EDGE, double_tagged=True, inner_vlan_id=next_inner_vlan_id)
 
         # Forwarding type -> routing v4
         for eth_type in routed_eth_types:
@@ -1057,7 +1057,7 @@ class DoubleVlanTerminationTest(FabricTest):
         switch_mac = pkt[Ether].dst
 
         # Setup port 1: packets on this port are double tagged packets
-        self.setup_port(self.port1, vlan_id=vlan_id, port_type=PORT_TYPE_INFRA, double_tagged=True, inner_vlan_id=inner_vlan_id)
+        self.setup_port(self.port1, vlan_id=vlan_id, port_type=PORT_TYPE_EDGE, double_tagged=True, inner_vlan_id=inner_vlan_id)
         # Setup port 2
         self.setup_port(self.port2, vlan_id=next_vlan, port_type=PORT_TYPE_INFRA, tagged=out_tagged)
 
