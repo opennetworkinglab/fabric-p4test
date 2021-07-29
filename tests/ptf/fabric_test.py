@@ -45,6 +45,9 @@ MIN_PKT_LEN = 80
 UDP_GTP_PORT = 2152
 DEFAULT_GTP_TUNNEL_SPORT = 1234  # arbitrary, but different from 2152
 
+DEFAULT_SLICE = 0
+DEFAULT_TC = 0
+
 ETH_TYPE_ARP = 0x0806
 ETH_TYPE_IPV4 = 0x0800
 ETH_TYPE_VLAN = 0x8100
@@ -1166,7 +1169,7 @@ class SpgwSimpleTest(IPv4UnicastTest):
         counter = self.read_counter(c_name, idx, typ="BYTES")
         return counter.data.byte_count
 
-    def _add_spgw_iface(self, iface_addr, prefix_len, iface_enum, dir_enum, gtpu_valid):
+    def _add_spgw_iface(self, iface_addr, prefix_len, iface_enum, dir_enum, gtpu_valid, slice_id):
         req = self.get_new_write_request()
 
         _iface_addr = ipv4_to_binary(iface_addr)
@@ -1180,37 +1183,41 @@ class SpgwSimpleTest(IPv4UnicastTest):
             ],
             "FabricIngress.spgw.load_iface",
             [
-                ("src_iface", stringify(iface_enum, 1))
+                ("src_iface", stringify(iface_enum, 1)),
+                ("slice_id", stringify(slice_id, 1))
             ],
         )
         self.write_request(req)
 
-    def add_ue_pool(self, pool_addr, prefix_len=32):
+    def add_ue_pool(self, pool_addr, prefix_len=32, slice_id=DEFAULT_SLICE):
         self._add_spgw_iface(
                 iface_addr=pool_addr,
                 prefix_len=prefix_len,
                 iface_enum=SPGW_IFACE_CORE,
                 dir_enum=SPGW_DIRECTION_DOWNLINK,
-                gtpu_valid=False)
+                gtpu_valid=False,
+                slice_id=slice_id)
 
-    def add_s1u_iface(self, s1u_addr, prefix_len=32):
+    def add_s1u_iface(self, s1u_addr, prefix_len=32, slice_id=DEFAULT_SLICE):
         self._add_spgw_iface(
                 iface_addr=s1u_addr,
                 prefix_len=prefix_len,
                 iface_enum=SPGW_IFACE_ACCESS,
                 dir_enum=SPGW_DIRECTION_DOWNLINK,
-                gtpu_valid=True)
+                gtpu_valid=True,
+                slice_id=slice_id)
 
     def add_dbuf_device(self,
                         dbuf_addr=DBUF_IPV4, drain_dst_addr=DBUF_DRAIN_DST_IPV4,
-                        dbuf_far_id=DBUF_FAR_ID, dbuf_teid=DBUF_TEID):
+                        dbuf_far_id=DBUF_FAR_ID, dbuf_teid=DBUF_TEID, slice_id=DEFAULT_SLICE):
         # Switch interface for traffic to/from dbuf device
         self._add_spgw_iface(
                 iface_addr=drain_dst_addr,
                 prefix_len=32,
                 iface_enum=SPGW_IFACE_FROM_DBUF,
                 dir_enum=SPGW_DIRECTION_DOWNLINK,
-                gtpu_valid=True)
+                gtpu_valid=True,
+                slice_id=slice_id)
 
         # FAR that tunnels to the dbuf device
         return self._add_far(
@@ -1227,7 +1234,7 @@ class SpgwSimpleTest(IPv4UnicastTest):
         )
 
     def add_uplink_pdr(self, ctr_id, far_id,
-                        teid, tunnel_dst_addr):
+                        teid, tunnel_dst_addr, qfi=None, tc=DEFAULT_TC):
         req = self.get_new_write_request()
         self.push_update_add_entry_to_action(
             req,
@@ -1235,29 +1242,36 @@ class SpgwSimpleTest(IPv4UnicastTest):
             [
                 self.Exact("teid", stringify(teid, 4)),
                 self.Exact("tunnel_ipv4_dst", ipv4_to_binary(tunnel_dst_addr)),
+                self.Exact("has_qfi", stringify(True if qfi is not None else False, 1)),
+                self.Exact("qfi", stringify(qfi if qfi is not None else 0, 1)),
             ],
             "FabricIngress.spgw.load_pdr",
             [
                 ("ctr_id", stringify(ctr_id, 4)),
                 ("far_id", stringify(far_id, 4)),
-                ("needs_gtpu_decap", stringify(1, 1))
+                ("needs_gtpu_decap", stringify(1, 1)),
+                ("tc", stringify(tc, 1)),
+
             ],
         )
         self.write_request(req)
 
-    def add_downlink_pdr(self, ctr_id, far_id, ue_addr):
+    def add_downlink_pdr(self, ctr_id, far_id, ue_addr, qfi=None, tc=DEFAULT_TC):
         req = self.get_new_write_request()
-
+        action_params = [
+                ("ctr_id", stringify(ctr_id, 4)),
+                ("far_id", stringify(far_id, 4)),
+                ("needs_gtpu_decap", stringify(0, 1)),
+                ("tc", stringify(tc, 1)),
+            ]
+        if qfi is not None:
+            action_params.append(("qfi", stringify(qfi, 1)))
         self.push_update_add_entry_to_action(
             req,
             "FabricIngress.spgw.downlink_pdrs",
             [self.Exact("ue_addr", ipv4_to_binary(ue_addr))],
-            "FabricIngress.spgw.load_pdr",
-            [
-                ("ctr_id", stringify(ctr_id, 4)),
-                ("far_id", stringify(far_id, 4)),
-                ("needs_gtpu_decap", stringify(0, 1))
-            ],
+            "FabricIngress.spgw.load_pdr" if qfi is None else "FabricIngress.spgw.load_pdr_qos_down",
+            action_params,
         )
         self.write_request(req)
 
@@ -1309,12 +1323,12 @@ class SpgwSimpleTest(IPv4UnicastTest):
             tunnel_dst_addr=s1u_sgw_addr)
         self.add_normal_far(far_id=far_id)
 
-    def setup_downlink(self, s1u_sgw_addr, s1u_enb_addr, teid, ue_addr, ctr_id, far_id=None):
+    def setup_downlink(self, s1u_sgw_addr, s1u_enb_addr, teid, ue_addr, ctr_id, far_id=None, qfi=None):
         if far_id is None:
             far_id = 24  # the second most random  number
 
         self.add_ue_pool(ue_addr)
-        self.add_downlink_pdr(ctr_id=ctr_id, far_id=far_id, ue_addr=ue_addr)
+        self.add_downlink_pdr(ctr_id=ctr_id, far_id=far_id, ue_addr=ue_addr, qfi=qfi)
         self.add_tunnel_far(
             far_id=far_id,
             teid=teid,
