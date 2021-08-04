@@ -231,6 +231,7 @@ def pkt_add_mpls(pkt, label, ttl, cos=0, s=1):
            pkt[Ether].payload
 
 
+# TODO: add PSC extension header support
 def pkt_add_gtp(pkt, out_ipv4_src, out_ipv4_dst, teid,
                 sport=DEFAULT_GTP_TUNNEL_SPORT, dport=UDP_GTP_PORT):
     payload = pkt[Ether].payload
@@ -1311,7 +1312,7 @@ class SpgwSimpleTest(IPv4UnicastTest):
             ]
         )
 
-    def setup_uplink(self, s1u_sgw_addr, teid, ctr_id, far_id=None):
+    def setup_uplink(self, s1u_sgw_addr, teid, ctr_id, far_id=None, qfi=None):
         if far_id is None:
             far_id = 23  # 23 is the most random number less than 100
 
@@ -1320,7 +1321,8 @@ class SpgwSimpleTest(IPv4UnicastTest):
             ctr_id=ctr_id,
             far_id=far_id,
             teid=teid,
-            tunnel_dst_addr=s1u_sgw_addr)
+            tunnel_dst_addr=s1u_sgw_addr,
+            qfi=qfi)
         self.add_normal_far(far_id=far_id)
 
     def setup_downlink(self, s1u_sgw_addr, s1u_enb_addr, teid, ue_addr, ctr_id, far_id=None, qfi=None):
@@ -1354,41 +1356,6 @@ class SpgwSimpleTest(IPv4UnicastTest):
             self.fail("Egress PDR packet counter incremented by %d instead of %d!" % (egress_inc, exp_egress_inc))
 
     def runUplinkTest(self, ue_out_pkt, tagged1, tagged2, mpls):
-        ctr_id = 1
-        dst_mac = HOST2_MAC
-
-        gtp_pkt = pkt_add_gtp(ue_out_pkt, out_ipv4_src=S1U_ENB_IPV4,
-                              out_ipv4_dst=S1U_SGW_IPV4, teid=TEID_1)
-        exp_pkt = ue_out_pkt.copy()
-        exp_pkt[Ether].src = exp_pkt[Ether].dst
-        exp_pkt[Ether].dst = dst_mac
-        if not mpls:
-            exp_pkt[IP].ttl = exp_pkt[IP].ttl - 1
-        else:
-            exp_pkt = pkt_add_mpls(exp_pkt, MPLS_LABEL_2, DEFAULT_MPLS_TTL)
-        if tagged2:
-            exp_pkt = pkt_add_vlan(exp_pkt, VLAN_ID_2)
-
-        self.setup_uplink(
-            s1u_sgw_addr=S1U_SGW_IPV4,
-            teid=TEID_1,
-            ctr_id=ctr_id
-        )
-
-        ingress_pdr_pkt_ctr1 = self.read_pkt_count("FabricIngress.spgw.pdr_counter", ctr_id)
-
-        self.runIPv4UnicastTest(pkt=gtp_pkt, dst_ipv4=ue_out_pkt[IP].dst,
-                                next_hop_mac=dst_mac,
-                                prefix_len=32, exp_pkt=exp_pkt,
-                                tagged1=tagged1, tagged2=tagged2, mpls=mpls)
-
-        # Verify the PDR packet counter increased
-        ingress_pdr_pkt_ctr2 = self.read_pkt_count("FabricIngress.spgw.pdr_counter", ctr_id)
-        ctr_increase = ingress_pdr_pkt_ctr2 - ingress_pdr_pkt_ctr1
-        if ctr_increase != 1:
-            self.fail("PDR packet counter incremented by %d instead of 1!" % ctr_increase)
-
-    def runUplinkTest(self, ue_out_pkt, tagged1, tagged2, mpls):
         upstream_mac = HOST2_MAC
 
         gtp_pkt = pkt_add_gtp(ue_out_pkt, out_ipv4_src=S1U_ENB_IPV4,
@@ -1409,7 +1376,8 @@ class SpgwSimpleTest(IPv4UnicastTest):
         self.setup_uplink(
             s1u_sgw_addr=S1U_SGW_IPV4,
             teid=UPLINK_TEID,
-            ctr_id=UPLINK_PDR_CTR_ID
+            ctr_id=UPLINK_PDR_CTR_ID,
+            qfi=None
         )
 
         # Read SPGW counters before sending the packet
@@ -1442,6 +1410,7 @@ class SpgwSimpleTest(IPv4UnicastTest):
             teid=DOWNLINK_TEID,
             ue_addr=UE_IPV4,
             ctr_id=DOWNLINK_PDR_CTR_ID,
+            qfi=None,
         )
 
         # Read SPGW counters before sending the packet
@@ -1456,6 +1425,7 @@ class SpgwSimpleTest(IPv4UnicastTest):
         self.check_pdr_counters_increased(DOWNLINK_PDR_CTR_ID, pdr_pkt_counts)
 
     def runDownlinkToDbufTest(self, pkt, tagged1, tagged2, mpls):
+        # TODO: add QFI
         exp_pkt = pkt.copy()
         exp_pkt[Ether].src = SWITCH_MAC
         exp_pkt[Ether].dst = DBUF_MAC
