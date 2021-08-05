@@ -21,7 +21,6 @@ from p4.v1 import p4runtime_pb2
 from ptf import testutils as testutils
 from ptf.mask import Mask
 from scapy.contrib.mpls import MPLS
-from scapy.contrib.gtp import GTP_U_Header, GTPPDUSessionContainer
 from scapy.layers.inet import IP, UDP, TCP
 from scapy.layers.l2 import Ether, Dot1Q
 from scapy.layers.ppp import PPPoE, PPP
@@ -164,35 +163,32 @@ PORT_TYPE_EDGE      = b"\x01"
 PORT_TYPE_INFRA     = b"\x02"
 PORT_TYPE_INTERNAL  = b"\x03"
 
-GTPU_EXT_PSC_TYPE_DL = 0
-GTPU_EXT_PSC_TYPE_UL = 1
+class GTP(Packet):
+    name = "GTP Header"
+    fields_desc = [
+        BitField("version", 1, 3),
+        BitField("PT", 1, 1),
+        BitField("reserved", 0, 1),
+        BitField("E", 0, 1),
+        BitField("S", 0, 1),
+        BitField("PN", 0, 1),
+        ByteField("gtp_type", 255),
+        ShortField("length", None),
+        IntField("teid", 0)
+    ]
 
-# class GTP(Packet):
-#     name = "GTP Header"
-#     fields_desc = [
-#         BitField("version", 1, 3),
-#         BitField("PT", 1, 1),
-#         BitField("reserved", 0, 1),
-#         BitField("E", 0, 1),
-#         BitField("S", 0, 1),
-#         BitField("PN", 0, 1),
-#         ByteField("gtp_type", 255),
-#         ShortField("length", None),
-#         IntField("teid", 0)
-#     ]
-#
-#     def post_build(self, pkt, payload):
-#         pkt += payload
-#         # Set the length field if it is unset
-#         if self.length is None:
-#             length = len(pkt) - 8
-#             pkt = pkt[:2] + struct.pack("!H", length) + pkt[4:]
-#         return pkt
-#
-#
-# # Register our GTP header with scapy for dissection
-# bind_layers(UDP, GTP, dport=UDP_GTP_PORT)
-# bind_layers(GTP, IP)
+    def post_build(self, pkt, payload):
+        pkt += payload
+        # Set the length field if it is unset
+        if self.length is None:
+            length = len(pkt) - 8
+            pkt = pkt[:2] + struct.pack("!H", length) + pkt[4:]
+        return pkt
+
+
+# Register our GTP header with scapy for dissection
+bind_layers(UDP, GTP, dport=UDP_GTP_PORT)
+bind_layers(GTP, IP)
 
 
 def pkt_mac_swap(pkt):
@@ -235,18 +231,16 @@ def pkt_add_mpls(pkt, label, ttl, cos=0, s=1):
            pkt[Ether].payload
 
 
+# TODO: add PSC extension header support
 def pkt_add_gtp(pkt, out_ipv4_src, out_ipv4_dst, teid,
-                sport=DEFAULT_GTP_TUNNEL_SPORT, dport=UDP_GTP_PORT,
-                ext_psc_type=None, ext_psc_qfi=None):
+                sport=DEFAULT_GTP_TUNNEL_SPORT, dport=UDP_GTP_PORT):
     payload = pkt[Ether].payload
-    pkt = Ether(src=pkt[Ether].src, dst=pkt[Ether].dst) / \
+    return Ether(src=pkt[Ether].src, dst=pkt[Ether].dst) / \
            IP(src=out_ipv4_src, dst=out_ipv4_dst, tos=0,
               id=0x1513, flags=0, frag=0) / \
            UDP(sport=sport, dport=dport, chksum=0) / \
-           GTP_U_Header(gtp_type=255, teid=teid)
-    if ext_psc_type is not None:
-        pkt = pkt / GTPPDUSessionContainer(type=ext_psc_type, QFI=ext_psc_qfi)
-    return pkt / payload
+           GTP(teid=teid) / \
+           payload
 
 
 def pkt_remove_vlan(pkt):
@@ -1273,12 +1267,11 @@ class SpgwSimpleTest(IPv4UnicastTest):
             ]
         if qfi is not None:
             action_params.append(("qfi", stringify(qfi, 1)))
-            action_params.append(("needs_qfi_push", stringify(1, 1)))
         self.push_update_add_entry_to_action(
             req,
             "FabricIngress.spgw.downlink_pdrs",
             [self.Exact("ue_addr", ipv4_to_binary(ue_addr))],
-            "FabricIngress.spgw.load_pdr" if qfi is None else "FabricIngress.spgw.load_pdr_qos",
+            "FabricIngress.spgw.load_pdr" if qfi is None else "FabricIngress.spgw.load_pdr_qos_down",
             action_params,
         )
         self.write_request(req)
@@ -1362,13 +1355,11 @@ class SpgwSimpleTest(IPv4UnicastTest):
         if egress_inc != exp_egress_inc:
             self.fail("Egress PDR packet counter incremented by %d instead of %d!" % (egress_inc, exp_egress_inc))
 
-    def runUplinkTest(self, ue_out_pkt, tagged1, tagged2, mpls, qfi=None):
+    def runUplinkTest(self, ue_out_pkt, tagged1, tagged2, mpls):
         upstream_mac = HOST2_MAC
 
         gtp_pkt = pkt_add_gtp(ue_out_pkt, out_ipv4_src=S1U_ENB_IPV4,
-                              out_ipv4_dst=S1U_SGW_IPV4, teid=UPLINK_TEID,
-                              ext_psc_type=None if qfi is None else GTPU_EXT_PSC_TYPE_UL,
-                              ext_psc_qfi=qfi)
+                              out_ipv4_dst=S1U_SGW_IPV4, teid=UPLINK_TEID)
         gtp_pkt[Ether].src = S1U_ENB_MAC
         gtp_pkt[Ether].dst = SWITCH_MAC
 
@@ -1386,7 +1377,7 @@ class SpgwSimpleTest(IPv4UnicastTest):
             s1u_sgw_addr=S1U_SGW_IPV4,
             teid=UPLINK_TEID,
             ctr_id=UPLINK_PDR_CTR_ID,
-            qfi=qfi,
+            qfi=None
         )
 
         # Read SPGW counters before sending the packet
@@ -1400,16 +1391,14 @@ class SpgwSimpleTest(IPv4UnicastTest):
         # Verify the Ingress and Egress PDR counters increased
         self.check_pdr_counters_increased(UPLINK_PDR_CTR_ID, pdr_pkt_counts)
 
-    def runDownlinkTest(self, pkt, tagged1, tagged2, mpls, qfi=None):
+    def runDownlinkTest(self, pkt, tagged1, tagged2, mpls):
         exp_pkt = pkt.copy()
         exp_pkt[Ether].src = SWITCH_MAC
         exp_pkt[Ether].dst = S1U_ENB_MAC
         if not mpls:
             exp_pkt[IP].ttl = exp_pkt[IP].ttl - 1
         exp_pkt = pkt_add_gtp(exp_pkt, out_ipv4_src=S1U_SGW_IPV4,
-                              out_ipv4_dst=S1U_ENB_IPV4, teid=DOWNLINK_TEID,
-                              ext_psc_type=None if qfi is None else GTPU_EXT_PSC_TYPE_DL,
-                              ext_psc_qfi=qfi)
+                              out_ipv4_dst=S1U_ENB_IPV4, teid=DOWNLINK_TEID)
         if mpls:
             exp_pkt = pkt_add_mpls(exp_pkt, MPLS_LABEL_2, DEFAULT_MPLS_TTL)
         if tagged2:
@@ -1421,7 +1410,7 @@ class SpgwSimpleTest(IPv4UnicastTest):
             teid=DOWNLINK_TEID,
             ue_addr=UE_IPV4,
             ctr_id=DOWNLINK_PDR_CTR_ID,
-            qfi=qfi,
+            qfi=None,
         )
 
         # Read SPGW counters before sending the packet
