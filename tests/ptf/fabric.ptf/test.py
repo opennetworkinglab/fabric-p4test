@@ -17,7 +17,6 @@
 from itertools import combinations
 
 from ptf.testutils import group
-from scapy.contrib.gtp import GTP_U_Header
 from scapy.layers.ppp import PPPoED
 
 from base_test import autocleanup
@@ -154,7 +153,7 @@ class FabricGtpEndMarkerPacketOut(IPv4UnicastTest):
             pkt = Ether(src=ZERO_MAC, dst=ZERO_MAC) / \
                   IP(src=SWITCH_IPV4, dst=S1U_ENB_IPV4) / \
                   UDP(sport=UDP_GTP_PORT, dport=UDP_GTP_PORT, chksum=0) / \
-                  GTP_U_Header(gtp_type=254, teid=1, length=0)
+                  GTP(gtp_type=254, teid=1, length=0)
             self.doRunTest(pkt, HOST2_MAC, tagged2, tc_name=tc_name)
 
 
@@ -180,7 +179,7 @@ class FabricIPv4UnicastGtpTest(IPv4UnicastTest):
         pkt = Ether(src=HOST1_MAC, dst=SWITCH_MAC) / \
               IP(src=HOST3_IPV4, dst=HOST4_IPV4) / \
               UDP(sport=UDP_GTP_PORT, dport=UDP_GTP_PORT) / \
-              GTP_U_Header(teid=0xeeffc0f0) / \
+              GTP(teid=0xeeffc0f0) / \
               IP(src=HOST1_IPV4, dst=HOST2_IPV4) / \
               inner_udp
         self.runIPv4UnicastTest(pkt, next_hop_mac=HOST2_MAC)
@@ -666,7 +665,7 @@ class FabricIPv4UnicastGtpAclInnerDropTest(IPv4UnicastTest):
             Ether(src=HOST1_MAC, dst=SWITCH_MAC) / \
             IP(src=HOST3_IPV4, dst=HOST4_IPV4) / \
             UDP(sport=UDP_GTP_PORT, dport=UDP_GTP_PORT) / \
-            GTP_U_Header(teid=0xEEFFC0F0) / \
+            GTP(teid=0xEEFFC0F0) / \
             IP(src=HOST1_IPV4, dst=HOST2_IPV4) / \
             UDP(sport=5061, dport=5060) / ("\xab" * 128)
         )
@@ -761,51 +760,49 @@ class FabricDefaultVlanPacketInTest(FabricTest):
 @group("spgw")
 class SpgwDownlinkTest(SpgwSimpleTest):
     @autocleanup
-    def doRunTest(self, pkt, tagged1, tagged2, mpls, qfi):
+    def doRunTest(self, pkt, tagged1, tagged2, mpls):
         self.runDownlinkTest(pkt=pkt, tagged1=tagged1,
-                             tagged2=tagged2, mpls=mpls, qfi=qfi)
+                             tagged2=tagged2, mpls=mpls)
 
     def runTest(self):
         print ""
         for vlan_conf, tagged in vlan_confs.items():
             for pkt_type in ["tcp", "udp", "icmp"]:
-                for qfi in [1, None]:
-                    for mpls in [False, True]:
-                        if mpls and tagged[1]:
-                            continue
-                        print "Testing VLAN=%s, pkt=%s, mpls=%s, qfi=%s..." \
-                              % (vlan_conf, pkt_type, mpls, qfi)
-                        pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
-                            eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
-                            ip_src=HOST1_IPV4, ip_dst=UE_IPV4,
-                            pktlen=MIN_PKT_LEN
-                        )
-                        self.doRunTest(pkt, tagged[0], tagged[1], mpls, qfi)
+                for mpls in [False, True]:
+                    if mpls and tagged[1]:
+                        continue
+                    print "Testing VLAN=%s, pkt=%s, mpls=%s..." \
+                          % (vlan_conf, pkt_type, mpls)
+                    pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
+                        eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
+                        ip_src=HOST1_IPV4, ip_dst=UE_IPV4,
+                        pktlen=MIN_PKT_LEN
+                    )
+                    self.doRunTest(pkt, tagged[0], tagged[1], mpls)
 
 
 @group("spgw")
 class SpgwUplinkTest(SpgwSimpleTest):
     @autocleanup
-    def doRunTest(self, pkt, tagged1, tagged2, mpls, qfi):
+    def doRunTest(self, pkt, tagged1, tagged2, mpls):
         self.runUplinkTest(ue_out_pkt=pkt, tagged1=tagged1,
-                           tagged2=tagged2, mpls=mpls, qfi=qfi)
+                           tagged2=tagged2, mpls=mpls)
 
     def runTest(self):
         print ""
         for vlan_conf, tagged in vlan_confs.items():
             for pkt_type in ["tcp", "udp", "icmp"]:
-                for qfi in [1, None]:
-                    for mpls in [False, True]:
-                        if mpls and tagged[1]:
-                            continue
-                        print "Testing VLAN=%s, pkt=%s, mpls=%s, qfi=%s..." \
-                              % (vlan_conf, pkt_type, mpls, qfi)
-                        pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
-                            eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
-                            ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4,
-                            pktlen=MIN_PKT_LEN
-                        )
-                        self.doRunTest(pkt, tagged[0], tagged[1], mpls, qfi)
+                for mpls in [False, True]:
+                    if mpls and tagged[1]:
+                        continue
+                    print "Testing VLAN=%s, pkt=%s, mpls=%s..." \
+                          % (vlan_conf, pkt_type, mpls)
+                    pkt = getattr(testutils, "simple_%s_packet" % pkt_type)(
+                        eth_src=HOST1_MAC, eth_dst=SWITCH_MAC,
+                        ip_src=HOST1_IPV4, ip_dst=HOST2_IPV4,
+                        pktlen=MIN_PKT_LEN
+                    )
+                    self.doRunTest(pkt, tagged[0], tagged[1], mpls)
 
 
 @group("spgw")

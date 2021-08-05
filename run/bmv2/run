@@ -9,8 +9,7 @@ MN_STRATUM_IMG="opennetworking/mn-stratum:latest@sha256:1bba2e2c06460c73b0133ae2
 
 # Tester image
 # Contains PTF and tvutils libraries, as well as P4RT, gNMI, and TV Python bindings
-# Build with Dockerfile.ptf file in the root of the project, for having updated scapy library
-TESTER_DOCKER_IMG=dmoro92/ptf:latest@sha256:03b84eef2ec396a87547ed897aba5268f56ec05e88b0eef48b598ff5b325898d
+TESTER_DOCKER_IMG=stratumproject/testvectors:ptf@sha256:6eff3274b13b8ec5f218c7275f79e33177c5af6cc5e5ed793d064ac2f6ec5698
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" > /dev/null 2>&1 && pwd)"
 ROOT_DIR=${DIR}/../..
